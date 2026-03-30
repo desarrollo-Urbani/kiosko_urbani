@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urbani Dashboard MVP</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f5f9fb 0%, #eaf1f7 100%);
+      color: #14303f;
+      padding: 22px;
+    }
+    h1 { margin: 0 0 14px; }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+      margin-bottom: 16px;
+      align-items: end;
+    }
+    label { display: grid; gap: 6px; font-size: 13px; color: #436070; }
+    select, button {
+      border: 1px solid #c8d5de;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 14px;
+      background: white;
+    }
+    button { cursor: pointer; }
+    .primary {
+      border: none;
+      background: #0b89ac;
+      color: white;
+      font-weight: 600;
+      min-width: 140px;
+    }
+    .lead {
+      border: 1px solid #d6e0e8;
+      border-radius: 14px;
+      padding: 14px;
+      background: white;
+      margin-bottom: 10px;
+      box-shadow: 0 6px 16px rgba(17, 36, 46, 0.07);
+    }
+    .meta { color: #4f6b79; font-size: 13px; }
+    .row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; margin-top: 10px; }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #103340;
+      background: #dbf1f7;
+    }
+    pre {
+      margin: 10px 0 0;
+      background: #f2f7fa;
+      border-radius: 10px;
+      padding: 10px;
+      white-space: pre-wrap;
+    }
+    @media (max-width: 760px) {
+      .toolbar { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 1fr; }
+    }
+    .avatar-widget {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 40;
+      display: grid;
+      gap: 8px;
+      justify-items: end;
+    }
+    .avatar-bubble {
+      max-width: 280px;
+      border-radius: 14px;
+      border: 1px solid #d8e2ee;
+      background: rgba(255, 255, 255, 0.96);
+      color: #2b3c4f;
+      padding: 10px 12px;
+      font-size: 14px;
+      line-height: 1.3;
+      box-shadow: 0 10px 24px rgba(24, 39, 58, 0.16);
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .avatar-bubble.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .avatar-btn {
+      width: 82px;
+      height: 82px;
+      border-radius: 50%;
+      border: 3px solid #ffffff;
+      box-shadow: 0 14px 28px rgba(21, 38, 56, 0.24);
+      padding: 0;
+      overflow: hidden;
+      background: #dbe3ee;
+      animation: avatarFloat 3s ease-in-out infinite;
+    }
+    .avatar-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    @keyframes avatarFloat {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+      100% { transform: translateY(0); }
+    }
+    @media (max-width: 640px) {
+      .avatar-btn { width: 72px; height: 72px; }
+      .avatar-bubble { max-width: 240px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Dashboard Comercial Urbani</h1>
+
+  <div class="toolbar">
+    <label>
+      Estado
+      <select id="statusFilter">
+        <option value="">Todos</option>
+        <option value="listo">listo</option>
+        <option value="casi listo">casi listo</option>
+        <option value="falta ahorro">falta ahorro</option>
+        <option value="falta credito">falta credito</option>
+        <option value="sin datos suficientes">sin datos suficientes</option>
+      </select>
+    </label>
+
+    <label>
+      Prioridad
+      <select id="priorityFilter">
+        <option value="">Todas</option>
+        <option value="high">high</option>
+        <option value="medium">medium</option>
+        <option value="low">low</option>
+      </select>
+    </label>
+
+    <button class="primary" id="refreshBtn">Actualizar</button>
+  </div>
+
+  <section id="list"></section>
+  <aside class="avatar-widget" aria-live="polite">
+    <div id="avatarBubble" class="avatar-bubble">Hola, soy UrbaniBot. Te ayudo a revisar y priorizar leads.</div>
+    <button id="avatarBtn" class="avatar-btn" aria-label="Mostrar ayuda de UrbaniBot">
+      <img src="/static/avatars/urbi-idle.png?v=1" alt="Avatar UrbaniBot" />
+    </button>
+  </aside>
+
+<script>
+const API = '/api/v1';
+
+function buildQuery() {
+  const params = new URLSearchParams();
+  const status = document.getElementById('statusFilter').value;
+  const priority = document.getElementById('priorityFilter').value;
+  if (status) params.set('lead_status', status);
+  if (priority) params.set('priority', priority);
+  return params.toString() ? `?${params.toString()}` : '';
+}
+
+async function refreshLeads() {
+  const res = await fetch(`${API}/dashboard/leads${buildQuery()}`);
+  const data = await res.json();
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const items = data.items || [];
+  if (items.length === 0) {
+    list.innerHTML = '<p>No hay leads para los filtros seleccionados.</p>';
+    return;
+  }
+
+  items.forEach((lead) => {
+    const card = document.createElement('article');
+    card.className = 'lead';
+    card.innerHTML = `
+      <strong>Lead ${lead.id.slice(0, 8)}</strong>
+      <div class="meta">Sesion: ${lead.session_id} | Creado: ${new Date(lead.created_at).toLocaleString()}</div>
+      <div class="meta"><span class="badge">Prioridad ${lead.priority}</span> <span class="badge">Estado ${lead.lead_status}</span></div>
+      <div class="row">
+        <select data-id="${lead.id}">
+          <option value="listo" ${lead.lead_status === 'listo' ? 'selected' : ''}>listo</option>
+          <option value="casi listo" ${lead.lead_status === 'casi listo' ? 'selected' : ''}>casi listo</option>
+          <option value="falta ahorro" ${lead.lead_status === 'falta ahorro' ? 'selected' : ''}>falta ahorro</option>
+          <option value="falta credito" ${lead.lead_status === 'falta credito' ? 'selected' : ''}>falta credito</option>
+          <option value="sin datos suficientes" ${lead.lead_status === 'sin datos suficientes' ? 'selected' : ''}>sin datos suficientes</option>
+        </select>
+        <button data-summary="${lead.id}">Generar resumen</button>
+      </div>
+      <pre>${lead.executive_summary || 'Sin resumen aun'}</pre>
+    `;
+    list.appendChild(card);
+  });
+
+  list.querySelectorAll('select[data-id]').forEach((sel) => {
+    sel.onchange = async () => {
+      await fetch(`${API}/dashboard/leads/${sel.dataset.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_status: sel.value }),
+      });
+      refreshLeads();
+    };
+  });
+
+  list.querySelectorAll('button[data-summary]').forEach((btn) => {
+    btn.onclick = async () => {
+      await fetch(`${API}/dashboard/leads/${btn.dataset.summary}/summary`, { method: 'POST' });
+      refreshLeads();
+    };
+  });
+}
+
+document.getElementById('refreshBtn').onclick = refreshLeads;
+document.getElementById('statusFilter').onchange = refreshLeads;
+document.getElementById('priorityFilter').onchange = refreshLeads;
+document.getElementById('avatarBtn').onclick = () => {
+  document.getElementById('avatarBubble').classList.toggle('show');
+};
+refreshLeads();
+</script>
+</body>
+</html>

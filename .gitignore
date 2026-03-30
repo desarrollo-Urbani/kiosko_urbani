@@ -1,0 +1,15 @@
+.env
+.venv/
+.venv-1/
+.venv-2/
+.pytest_cache/
+__pycache__/
+node_modules/
+.vite/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*_tmp*
+_tmp_*
+*.log

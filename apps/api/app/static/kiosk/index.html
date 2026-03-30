@@ -1,0 +1,1193 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urbani - Asistente de Atencion</title>
+  <style>
+    :root {
+      --bg-1: #070e09;
+      --bg-2: #0d1b11;
+      --bg-3: #142614;
+      --panel: rgba(25, 33, 27, 0.72);
+      --panel-line: rgba(137, 174, 125, 0.42);
+      --text: #edf3ea;
+      --muted: #b5c6b0;
+      --action: rgba(26, 34, 28, 0.88);
+      --action-hover: rgba(35, 46, 37, 0.95);
+      --action-line: rgba(134, 171, 123, 0.45);
+      --bright: #93e63f;
+      --glow: #74c437;
+      --ok: #7fdc3c;
+      --soft-shadow: 0 16px 42px rgba(0, 0, 0, 0.5);
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      font-family: "Aptos", "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 14% 22%, rgba(74, 146, 48, 0.3), transparent 35%),
+        radial-gradient(circle at 76% 64%, rgba(107, 178, 65, 0.2), transparent 44%),
+        radial-gradient(circle at 50% 110%, rgba(48, 84, 35, 0.34), transparent 48%),
+        linear-gradient(155deg, var(--bg-1) 0%, var(--bg-2) 42%, var(--bg-3) 100%);
+      overflow: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        radial-gradient(circle at 20% 15%, rgba(255,255,255,0.42) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 70% 40%, rgba(255,255,255,0.35) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 48% 80%, rgba(255,255,255,0.3) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 84% 20%, rgba(255,255,255,0.2) 0 1px, transparent 1.5px);
+      background-size: 430px 430px, 520px 520px, 470px 470px, 540px 540px;
+      opacity: 0.42;
+    }
+    .stage {
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 66px 1fr;
+    }
+    .header {
+      display: grid;
+      place-items: center;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      font-size: 30px;
+      font-weight: 500;
+      border-bottom: 1px solid rgba(139, 184, 118, 0.32);
+      background: linear-gradient(180deg, rgba(8, 20, 11, 0.88), rgba(8, 20, 11, 0.35));
+      box-shadow: inset 0 -1px 0 rgba(117, 173, 84, 0.25), 0 4px 28px rgba(30, 65, 24, 0.34);
+    }
+    .layout {
+      width: min(100vw, 1920px);
+      height: 100%;
+      margin: 0 auto;
+      padding: 20px 22px 22px;
+      display: grid;
+      grid-template-columns: 46% 54%;
+      gap: 24px;
+    }
+
+    .avatar-zone {
+      position: relative;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-height: 0;
+      align-content: start;
+      gap: 10px;
+    }
+    .avatar-hero {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 420px;
+      align-content: start;
+      padding-top: 8px;
+    }
+    .avatar-halo {
+      position: absolute;
+      width: clamp(440px, 63vh, 720px);
+      height: clamp(440px, 63vh, 720px);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(134, 223, 74, 0.24) 0%, rgba(83, 154, 46, 0.18) 40%, transparent 70%);
+      filter: blur(4px);
+      animation: haloPulse 5s ease-in-out infinite;
+    }
+    .avatar-ring {
+      position: absolute;
+      width: clamp(390px, 58vh, 650px);
+      height: clamp(390px, 58vh, 650px);
+      border-radius: 50%;
+      border: 1px solid rgba(144, 196, 109, 0.3);
+      box-shadow: inset 0 0 28px rgba(84, 140, 52, 0.22);
+    }
+    .avatar-figure {
+      position: relative;
+      width: clamp(260px, 34vh, 430px);
+      aspect-ratio: 1 / 1;
+      filter: drop-shadow(0 22px 36px rgba(12, 22, 43, 0.54));
+      transform-origin: 50% 58%;
+      animation: idleFloat 4.6s ease-in-out infinite;
+    }
+    .avatar-figure img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      animation: idleBreath 3.6s ease-in-out infinite;
+    }
+    .avatar-figure[data-state="thinking"] {
+      animation: thinkingTilt 1.15s ease-in-out infinite;
+    }
+    .avatar-figure[data-state="suggesting"],
+    .avatar-figure[data-state="done"] {
+      animation: speakingMove 1.55s ease-in-out infinite;
+    }
+    .avatar-figure.greeting-in {
+      animation: greetingIn 520ms cubic-bezier(.21,.79,.3,1.08) both, idleFloat 4.6s ease-in-out 540ms infinite;
+    }
+    .visor-glow {
+      position: absolute;
+      width: 35%;
+      height: 13%;
+      left: 32.5%;
+      top: 31%;
+      border-radius: 999px;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 55%, rgba(146, 236, 75, 0.3), transparent 66%);
+      mix-blend-mode: screen;
+      filter: blur(2px);
+      opacity: 0.42;
+      transition: opacity .24s ease, transform .24s ease;
+    }
+    .avatar-figure[data-state="thinking"] .visor-glow {
+      opacity: 0.95;
+      transform: scale(1.05);
+    }
+    .avatar-figure[data-state="greeting"] .visor-glow,
+    .avatar-figure[data-state="suggesting"] .visor-glow,
+    .avatar-figure[data-state="done"] .visor-glow {
+      opacity: 0.78;
+    }
+    .blink-mask {
+      position: absolute;
+      width: 34%;
+      height: 4%;
+      left: 33%;
+      top: 35.8%;
+      border-radius: 999px;
+      background: rgba(21, 33, 58, 0.72);
+      transform: scaleY(0);
+      transform-origin: center;
+      pointer-events: none;
+    }
+    .avatar-figure.blink .blink-mask {
+      animation: blinkDown 180ms ease-in-out;
+    }
+    .dot-cloud {
+      position: absolute;
+      right: 24%;
+      top: 16%;
+      display: flex;
+      gap: 8px;
+      z-index: 2;
+    }
+    .dot-cloud .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      box-shadow: 0 0 14px rgba(140, 227, 75, 0.4);
+      animation: dotsIdle 2.1s ease-in-out infinite;
+    }
+    .dot:nth-child(1) { background: #7ecf2f; animation-delay: 0s; }
+    .dot:nth-child(2) { background: #9ae84a; animation-delay: 0.2s; }
+    .dot:nth-child(3) { background: #bcc6d4; animation-delay: 0.4s; }
+    .avatar-figure[data-state="thinking"] ~ .dot-cloud .dot {
+      animation: dotsThinking .85s ease-in-out infinite;
+    }
+
+    .message-bubble {
+      position: relative;
+      border-radius: 20px;
+      border: 1px solid rgba(136, 172, 120, 0.5);
+      background:
+        linear-gradient(180deg, rgba(30, 37, 32, 0.85), rgba(21, 28, 23, 0.9)),
+        radial-gradient(circle at 20% 0%, rgba(120, 192, 71, 0.16), transparent 40%);
+      backdrop-filter: blur(8px);
+      padding: 16px 18px;
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 12px;
+      align-items: center;
+      box-shadow: var(--soft-shadow);
+      min-height: 88px;
+      margin: 0 8px 0 8px;
+      align-self: start;
+    }
+    .bubble-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 1px solid rgba(147, 184, 120, 0.55);
+      box-shadow: 0 8px 22px rgba(9, 20, 41, 0.4);
+      background: rgba(255,255,255,0.08);
+    }
+    .bubble-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .bubble-text {
+      font-size: 34px;
+      line-height: 1.15;
+      color: #f2f7ff;
+      transition: opacity .28s ease, transform .28s ease;
+      margin-right: 52px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bubble-text.changing {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    .bubble-mic {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 1px solid rgba(153, 191, 126, 0.5);
+      display: grid;
+      place-items: center;
+      font-size: 17px;
+      background: rgba(255,255,255,0.08);
+      color: #e3f6d9;
+    }
+
+    .panel {
+      border-radius: 24px;
+      border: 1px solid var(--panel-line);
+      background:
+        linear-gradient(180deg, rgba(30, 42, 31, 0.6), rgba(18, 26, 20, 0.7)),
+        radial-gradient(circle at 80% 0%, rgba(139, 201, 89, 0.16), transparent 45%);
+      box-shadow: var(--soft-shadow);
+      backdrop-filter: blur(10px);
+      padding: 22px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+      min-height: 0;
+    }
+    .panel h1 {
+      margin: 0;
+      font-size: clamp(34px, 4.2vh, 56px);
+      line-height: 1.05;
+      font-weight: 700;
+    }
+    .panel .sub {
+      margin-top: 6px;
+      font-size: clamp(20px, 2.2vh, 31px);
+      color: var(--muted);
+    }
+
+    .screen {
+      border-radius: 18px;
+      border: 1px solid rgba(129, 166, 111, 0.42);
+      background: rgba(13, 20, 15, 0.58);
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      overflow: auto;
+      min-height: 0;
+    }
+    .screen.hidden { display: none; }
+    .hidden { display: none !important; }
+    .step {
+      display: inline-block;
+      width: fit-content;
+      border-radius: 999px;
+      border: 1px solid rgba(129, 176, 97, 0.52);
+      background: rgba(75, 129, 43, 0.33);
+      padding: 5px 10px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #e7f0ff;
+    }
+    .ticket {
+      border-radius: 14px;
+      border: 1px solid rgba(135, 180, 110, 0.55);
+      background: rgba(41, 62, 35, 0.62);
+      color: #f1f8ed;
+      font-weight: 700;
+      line-height: 1.3;
+      font-size: clamp(22px, 2.4vh, 34px);
+      padding: 14px;
+    }
+    .question {
+      margin: 0;
+      font-size: clamp(30px, 3.5vh, 50px);
+      line-height: 1.12;
+      font-weight: 700;
+    }
+    .helper {
+      margin: 0;
+      font-size: clamp(18px, 2vh, 29px);
+      color: var(--muted);
+    }
+    .actions { display: grid; gap: 12px; }
+    .input-row {
+      display: grid;
+      gap: 10px;
+    }
+    .input-row input {
+      width: 100%;
+      min-height: 66px;
+      border-radius: 13px;
+      border: 1px solid rgba(125, 168, 104, 0.55);
+      background: rgba(16, 28, 17, 0.88);
+      color: #eef5e8;
+      font-size: 28px;
+      padding: 10px 14px;
+      outline: none;
+    }
+    .input-row input::placeholder {
+      color: #a9bad8;
+    }
+    .domain-quick {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .domain-quick button {
+      min-height: 54px;
+      text-align: center;
+      font-size: 20px;
+      padding: 8px 10px;
+    }
+    .rut-keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .rut-keypad button {
+      min-height: 70px;
+      text-align: center;
+      font-size: 30px;
+      font-weight: 700;
+      padding: 0;
+    }
+    button {
+      width: 100%;
+      min-height: 86px;
+      border-radius: 15px;
+      border: 1px solid var(--action-line);
+      background: var(--action);
+      color: #f2f8ff;
+      text-align: left;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: transform .14s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
+      box-shadow: inset 0 0 0 1px rgba(142, 181, 116, 0.1);
+    }
+    button:hover {
+      transform: translateY(-1px);
+      background: var(--action-hover);
+      border-color: rgba(153, 193, 129, 0.64);
+      box-shadow: 0 9px 24px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(169, 209, 145, 0.22);
+    }
+    .action-card {
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+    .icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: 1px solid rgba(141, 186, 114, 0.58);
+      display: grid;
+      place-items: center;
+      color: #eaf5df;
+      background: rgba(102, 160, 61, 0.26);
+      font-size: 37px;
+      line-height: 1;
+      font-weight: 500;
+    }
+    .action-title {
+      display: block;
+      font-size: clamp(33px, 3.5vh, 49px);
+      line-height: 1.08;
+      font-weight: 700;
+    }
+    .action-desc {
+      display: block;
+      margin-top: 4px;
+      font-size: clamp(20px, 2.1vh, 29px);
+      line-height: 1.2;
+      color: #c6d6bf;
+    }
+    .primary {
+      background: linear-gradient(180deg, rgba(129, 216, 43, 0.96), rgba(92, 182, 27, 0.96));
+      border-color: rgba(166, 236, 102, 0.72);
+      color: #122006;
+    }
+    .secondary {
+      background: rgba(18, 27, 21, 0.84);
+      border-color: rgba(125, 166, 106, 0.52);
+    }
+    .cta {
+      background: linear-gradient(180deg, rgba(134, 222, 49, 0.95), rgba(99, 189, 31, 0.96));
+      border-color: rgba(166, 236, 102, 0.72);
+      color: #122006;
+    }
+
+    @keyframes idleFloat {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-9px); }
+      100% { transform: translateY(0); }
+    }
+    @keyframes idleBreath {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.016); }
+      100% { transform: scale(1); }
+    }
+    @keyframes haloPulse {
+      0% { opacity: 0.76; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.045); }
+      100% { opacity: 0.76; transform: scale(1); }
+    }
+    @keyframes greetingIn {
+      from { opacity: 0; transform: scale(0.93) translateY(15px) rotate(-2deg); }
+      to { opacity: 1; transform: scale(1) translateY(0) rotate(0deg); }
+    }
+    @keyframes thinkingTilt {
+      0% { transform: translateY(0) rotate(-1deg); }
+      50% { transform: translateY(-4px) rotate(1.2deg); }
+      100% { transform: translateY(0) rotate(-1deg); }
+    }
+    @keyframes speakingMove {
+      0% { transform: translateY(0) rotate(0deg); }
+      25% { transform: translateY(-4px) rotate(1.1deg); }
+      50% { transform: translateY(-1px) rotate(0deg); }
+      75% { transform: translateY(-4px) rotate(-1deg); }
+      100% { transform: translateY(0) rotate(0deg); }
+    }
+    @keyframes blinkDown {
+      0% { transform: scaleY(0); opacity: 0; }
+      45% { transform: scaleY(1); opacity: 1; }
+      100% { transform: scaleY(0); opacity: 0; }
+    }
+    @keyframes dotsIdle {
+      0%, 100% { transform: translateY(0); opacity: 0.72; }
+      50% { transform: translateY(-4px); opacity: 1; }
+    }
+    @keyframes dotsThinking {
+      0%, 100% { transform: translateY(0) scale(1); opacity: 0.6; }
+      50% { transform: translateY(-7px) scale(1.18); opacity: 1; }
+    }
+
+    @media (max-width: 1280px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: 42% 58%;
+        gap: 16px;
+      }
+      .avatar-zone {
+        grid-template-rows: auto auto;
+        gap: 8px;
+      }
+      .avatar-hero {
+        min-height: 280px;
+        padding-top: 0;
+      }
+      .avatar-figure {
+        width: clamp(180px, 24vh, 300px);
+      }
+      .bubble-text { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <header class="header">URBANI</header>
+    <section class="layout">
+      <section class="avatar-zone">
+        <div class="avatar-hero">
+          <div class="avatar-halo"></div>
+          <div class="avatar-ring"></div>
+
+          <figure class="avatar-figure greeting-in" id="avatarFigure" data-state="greeting">
+            <img id="avatarMainImage" src="/static/avatars/urbi-greeting.png?v=1" alt="Avatar Urbi" />
+            <span class="visor-glow"></span>
+            <span class="blink-mask"></span>
+          </figure>
+
+          <div class="dot-cloud">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+        </div>
+
+        <aside class="message-bubble">
+          <div class="bubble-avatar"><img id="avatarBubbleImage" src="/static/avatars/urbi-greeting.png?v=1" alt="Urbi" /></div>
+          <p class="bubble-text" id="avatarMessage">
+            Hola, soy Urbi. Puedes sacar tu numero o comenzar asesoria guiada.
+          </p>
+          <span class="bubble-mic">.</span>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <div>
+          <h1>Asistente de Atencion</h1>
+          <p class="sub">Pantalla tactil para fila y perfilado comercial.</p>
+        </div>
+
+        <section id="home" class="screen">
+          <button id="ticketOnlyBtn" class="action-card">
+            <span class="icon">10</span>
+            <span>
+              <span class="action-title">Sacar numero de atencion</span>
+              <span class="action-desc">Recibe tu turno para atencion con ejecutivo.</span>
+            </span>
+          </button>
+          <button id="adviseBtn" class="action-card">
+            <span class="icon">?</span>
+            <span>
+              <span class="action-title">Quiero asesorarme</span>
+              <span class="action-desc">Te guiamos con preguntas simples y sugerencias.</span>
+            </span>
+          </button>
+        </section>
+
+        <section id="ticketOnly" class="screen hidden">
+          <h2 class="question">Numero de atencion</h2>
+          <div id="ticketOnlyInfo" class="ticket"></div>
+          <p class="helper">Puedes seguir con asesoria cuando quieras.</p>
+          <button id="continueAdviceBtn" class="primary">Asesorarme ahora</button>
+          <button id="ticketOnlyBackBtn" class="secondary">Volver</button>
+        </section>
+
+        <section id="rutScreen" class="screen hidden">
+          <span class="step">Identificacion</span>
+          <h2 class="question">Ingresa tu RUT</h2>
+          <p class="helper">Formato: sin puntos y con guion. Ejemplo: 12345678-9</p>
+          <div id="crmLookupResult" class="ticket hidden"></div>
+          <div id="crmConfirmActions" class="actions hidden">
+            <button id="confirmCrmDataBtn" class="primary">Si, mis datos estan correctos</button>
+            <button id="editCrmDataBtn" class="secondary">No, deseo corregirlos</button>
+          </div>
+          <div id="crmEditForm" class="input-row hidden">
+            <input id="crmEditPhone" type="text" placeholder="Telefono actualizado" />
+            <input id="crmEditEmail" type="email" placeholder="Email actualizado" />
+            <div class="domain-quick" id="emailDomainQuick">
+              <button type="button" class="secondary" data-email-domain="@gmail.com">@gmail.com</button>
+              <button type="button" class="secondary" data-email-domain="@hotmail.com">@hotmail.com</button>
+              <button type="button" class="secondary" data-email-domain="@outlook.com">@outlook.com</button>
+              <button type="button" class="secondary" data-email-domain="@yahoo.com">@yahoo.com</button>
+            </div>
+            <button id="saveCrmEditBtn" class="primary">Guardar correccion y continuar</button>
+          </div>
+          <div class="input-row">
+            <input id="rutInput" type="text" placeholder="Ejemplo: 12345678-9" readonly />
+          </div>
+          <div class="rut-keypad" id="rutKeypad">
+            <button type="button" class="secondary" data-rut-key="1">1</button>
+            <button type="button" class="secondary" data-rut-key="2">2</button>
+            <button type="button" class="secondary" data-rut-key="3">3</button>
+            <button type="button" class="secondary" data-rut-key="4">4</button>
+            <button type="button" class="secondary" data-rut-key="5">5</button>
+            <button type="button" class="secondary" data-rut-key="6">6</button>
+            <button type="button" class="secondary" data-rut-key="7">7</button>
+            <button type="button" class="secondary" data-rut-key="8">8</button>
+            <button type="button" class="secondary" data-rut-key="9">9</button>
+            <button type="button" class="secondary" data-rut-key="K">K</button>
+            <button type="button" class="secondary" data-rut-key="0">0</button>
+            <button type="button" class="secondary" data-rut-key="-">-</button>
+            <button type="button" class="secondary" data-rut-action="clear">Limpiar</button>
+            <button type="button" class="secondary" data-rut-action="back">Borrar</button>
+            <button type="button" class="primary" data-rut-action="auto">Formatear</button>
+          </div>
+          <button id="saveRutBtn" class="primary">Continuar</button>
+          <button id="skipRutBtn" class="secondary">No deseo informarlo</button>
+        </section>
+
+        <section id="flow" class="screen hidden">
+          <span id="stepPill" class="step">Paso 1 de 4</span>
+          <div id="ticketBox" class="ticket hidden"></div>
+          <h2 id="questionTitle" class="question"></h2>
+          <p class="helper">Selecciona una opcion.</p>
+          <div id="options" class="actions"></div>
+          <div id="customInputRow" class="input-row hidden">
+            <input id="customInput" type="text" placeholder="" />
+            <button id="saveCustomAnswerBtn" class="primary">Guardar respuesta</button>
+          </div>
+          <button id="skipBtn" class="secondary">No lo se</button>
+        </section>
+
+        <section id="result" class="screen hidden">
+          <span class="step">Resultado</span>
+          <h2 class="question">Asesoria inicial lista</h2>
+          <p id="summaryText" class="helper" style="font-size: 25px; color:#ecf4ff;"></p>
+          <p id="recommendationText" class="helper"></p>
+          <button id="restartBtn" class="cta">Nueva atencion</button>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const API = "/api/v1";
+    const TOKEN = "dev-kiosk-token";
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Kiosk-Token": TOKEN
+    };
+
+    const QUESTIONS = [
+      {
+        key: "goal",
+        title: "Buscas para vivir o invertir?",
+        options: [
+          { label: "Quiero mi hogar", value: "vivir" },
+          { label: "Quiero invertir", value: "invertir" }
+        ]
+      },
+      {
+        key: "property_type",
+        title: "Que tipo de propiedad te interesa?",
+        options: [
+          { label: "Casa", value: "house" },
+          { label: "Departamento", value: "dept" }
+        ]
+      },
+      {
+        key: "zone",
+        title: "En que comuna te interesa buscar?",
+        options: [
+          { label: "Vitacura", value: "Vitacura" },
+          { label: "Nunoa", value: "Nunoa" },
+          { label: "Maipu", value: "Maipu" }
+        ]
+      },
+      {
+        key: "subsidy",
+        title: "Tienes subsidio?",
+        options: [
+          { label: "Si", value: "si" },
+          { label: "No", value: "no" }
+        ]
+      },
+      {
+        key: "income_range",
+        title: "En que rango estan tus ingresos?",
+        options: [
+          { label: "Hasta $1.000.000", value: "hasta_1000" },
+          { label: "$1.000.000 a $2.000.000", value: "1000_2000" },
+          { label: "$2.000.000 a $3.500.000", value: "2000_3500" },
+          { label: "Mas de $3.500.000", value: "3500_plus" }
+        ]
+      },
+      {
+        key: "down_payment_ready",
+        title: "Tienes ahorro para el pie?",
+        options: [
+          { label: "Si, tengo ahorro", value: true },
+          { label: "No, aun no", value: false }
+        ]
+      },
+      {
+        key: "purchase_timeline",
+        title: "En que plazo quieres comprar?",
+        options: [
+          { label: "0 a 3 meses", value: "0_3m" },
+          { label: "4 a 8 meses", value: "4_8m" },
+          { label: "9 a 18 meses", value: "9_18m" }
+        ]
+      }
+    ];
+
+    let sessionId = null;
+    let questionIndex = 0;
+    let pendingAction = null;
+    const profile = {};
+
+    const home = document.getElementById("home");
+    const rutScreen = document.getElementById("rutScreen");
+    const ticketOnly = document.getElementById("ticketOnly");
+    const flow = document.getElementById("flow");
+    const result = document.getElementById("result");
+    const ticketBox = document.getElementById("ticketBox");
+    const questionTitle = document.getElementById("questionTitle");
+    const options = document.getElementById("options");
+    const stepPill = document.getElementById("stepPill");
+    const customInputRow = document.getElementById("customInputRow");
+    const customInput = document.getElementById("customInput");
+    const saveCustomAnswerBtn = document.getElementById("saveCustomAnswerBtn");
+    const rutInput = document.getElementById("rutInput");
+    const rutKeypad = document.getElementById("rutKeypad");
+    const crmLookupResult = document.getElementById("crmLookupResult");
+    const crmConfirmActions = document.getElementById("crmConfirmActions");
+    const confirmCrmDataBtn = document.getElementById("confirmCrmDataBtn");
+    const editCrmDataBtn = document.getElementById("editCrmDataBtn");
+    const crmEditForm = document.getElementById("crmEditForm");
+    const crmEditPhone = document.getElementById("crmEditPhone");
+    const crmEditEmail = document.getElementById("crmEditEmail");
+    const emailDomainQuick = document.getElementById("emailDomainQuick");
+    const saveCrmEditBtn = document.getElementById("saveCrmEditBtn");
+    let crmConfirmationResolver = null;
+    let crmEditResolver = null;
+    const avatarFigure = document.getElementById("avatarFigure");
+    const avatarMainImage = document.getElementById("avatarMainImage");
+    const avatarBubbleImage = document.getElementById("avatarBubbleImage");
+    const avatarMessage = document.getElementById("avatarMessage");
+    const avatarStateImage = {
+      idle: "/static/avatars/urbi-idle.png?v=1",
+      greeting: "/static/avatars/urbi-greeting.png?v=1",
+      asking: "/static/avatars/urbi-idle.png?v=1",
+      thinking: "/static/avatars/urbi-thinking.png?v=1",
+      suggesting: "/static/avatars/urbi-speaking.png?v=1",
+      done: "/static/avatars/urbi-cta.png?v=1"
+    };
+
+    function setAvatarState(state, message) {
+      avatarFigure.dataset.state = state;
+      const src = avatarStateImage[state] || avatarStateImage.idle;
+      avatarMainImage.src = src;
+      avatarBubbleImage.src = src;
+      avatarFigure.classList.remove("greeting-in");
+      if (state === "greeting") {
+        avatarFigure.classList.add("greeting-in");
+      }
+
+      avatarMessage.classList.add("changing");
+      setTimeout(() => {
+        avatarMessage.textContent = message;
+        avatarMessage.classList.remove("changing");
+      }, 160);
+    }
+
+    function scheduleBlink() {
+      const wait = 4000 + Math.floor(Math.random() * 2000);
+      setTimeout(() => {
+        avatarFigure.classList.add("blink");
+        setTimeout(() => {
+          avatarFigure.classList.remove("blink");
+          scheduleBlink();
+        }, 190);
+      }, wait);
+    }
+
+    function showScreen(screen) {
+      home.classList.toggle("hidden", screen !== "home");
+      rutScreen.classList.toggle("hidden", screen !== "rutScreen");
+      ticketOnly.classList.toggle("hidden", screen !== "ticketOnly");
+      flow.classList.toggle("hidden", screen !== "flow");
+      result.classList.toggle("hidden", screen !== "result");
+    }
+
+    async function createSession() {
+      const res = await fetch(`${API}/sessions/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ kiosk_id: "kiosk-mvp-simple" })
+      });
+      const data = await res.json();
+      sessionId = data.session_id;
+    }
+
+    async function createTicket() {
+      const res = await fetch(`${API}/queue/tickets`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ session_id: sessionId })
+      });
+      const data = await res.json();
+      ticketBox.textContent = `Tu numero de atencion: ${data.ticket_number} | Espera estimada: ${data.eta_minutes} min`;
+      ticketBox.classList.remove("hidden");
+      return data;
+    }
+
+    async function saveAnswer(questionKey, answerValue, answerLabel) {
+      profile[questionKey] = answerValue;
+      await fetch(`${API}/sessions/${sessionId}/answers`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          question_key: questionKey,
+          answer_value: answerValue,
+          answer_label: answerLabel
+        })
+      });
+    }
+
+    async function lookupCustomerInCrm(rutValue) {
+      try {
+        const res = await fetch(`${API}/crm/customers/by-rut/${encodeURIComponent(rutValue)}`, {
+          method: "GET",
+          headers
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data.found || !data.customer) return null;
+        return data.customer;
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function normalizeBool(value) {
+      if (value === true || value === "true" || value === "si") return true;
+      if (value === false || value === "false" || value === "no") return false;
+      return null;
+    }
+
+    function computeLeadSummary() {
+      const destination = profile.goal || "sin definir";
+      const rut = profile.rut || "sin informar";
+      const propertyType = profile.property_type || "sin definir";
+      const zone = profile.zone || "sin definir";
+      const subsidy = profile.subsidy || "sin definir";
+      const income = profile.income_range || "sin definir";
+      const downPayment = normalizeBool(profile.down_payment_ready);
+      const timeline = profile.purchase_timeline || "sin definir";
+
+      const incomeCompatible = ["2000_3500", "3500_plus"].includes(String(income));
+      const shortTerm = timeline === "0_3m";
+
+      let score = 0;
+      if (downPayment === true) score += 45;
+      if (incomeCompatible) score += 35;
+      if (shortTerm) score += 20;
+
+      let classification = "bajo";
+      if (downPayment === true && incomeCompatible && shortTerm) {
+        classification = "alto";
+      } else if (score >= 45) {
+        classification = "medio";
+      }
+
+      return {
+        score,
+        classification,
+        rut,
+        destination,
+        propertyType,
+        zone,
+        subsidy,
+        income,
+        downPayment: downPayment === null ? "sin definir" : (downPayment ? "si" : "no"),
+        timeline
+      };
+    }
+
+    function renderQuestion() {
+      if (questionIndex >= QUESTIONS.length) {
+        finishFlow();
+        return;
+      }
+
+      const q = QUESTIONS[questionIndex];
+      const totalSteps = QUESTIONS.length + 1;
+      stepPill.textContent = `Paso ${questionIndex + 2} de ${totalSteps}`;
+      questionTitle.textContent = q.title;
+      options.innerHTML = "";
+      customInputRow.classList.add("hidden");
+      setAvatarState("asking", "Responde tocando una opcion. Si no estas seguro, puedes saltar la pregunta.");
+
+      if (q.input) {
+        customInputRow.classList.remove("hidden");
+        customInput.value = "";
+        customInput.placeholder = q.placeholder || "Escribe tu respuesta";
+        return;
+      }
+
+      q.options.forEach((opt) => {
+        const btn = document.createElement("button");
+        btn.className = "primary";
+        btn.textContent = opt.label;
+        btn.onclick = async () => {
+          setAvatarState("thinking", "Perfecto, estoy procesando tu respuesta...");
+          await saveAnswer(q.key, opt.value, opt.label);
+          questionIndex += 1;
+          setAvatarState("suggesting", "Gracias. Sigamos con la siguiente.");
+          renderQuestion();
+        };
+        options.appendChild(btn);
+      });
+    }
+
+    function profileText() {
+      const goal = profile.goal || "sin definir";
+      const kind = profile.property_type || "sin tipo";
+      const zone = profile.zone || "sin comuna";
+      return `Perfil detectado: objetivo ${goal}, propiedad ${kind}, zona ${zone}.`;
+    }
+
+    async function fetchRecommendation() {
+      setAvatarState("thinking", "Estoy buscando opciones que calcen con lo que me contaste...");
+      await fetch(`${API}/recommendations/run`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ session_id: sessionId })
+      });
+
+      const recRes = await fetch(`${API}/recommendations/${sessionId}`, { headers });
+      const recData = await recRes.json();
+      const first = (recData.items || [])[0];
+      if (!first) {
+        return "No hay sugerencias automaticas por ahora. Un ejecutivo te ayudara con opciones manuales.";
+      }
+      return `Sugerencia inicial: ${first.project_name} en ${first.commune}, ${Math.round(first.price_uf)} UF (${first.property_type}).`;
+    }
+
+    async function finishFlow() {
+      showScreen("result");
+      const lead = computeLeadSummary();
+      const leadText =
+        `RUT: ${lead.rut} | Destino: ${lead.destination} | Tipo: ${lead.propertyType}\n` +
+        `Zona: ${lead.zone} | ` +
+        `Subsidio: ${lead.subsidy} | Ingreso: ${lead.income} | Ahorro pie: ${lead.downPayment}\n` +
+        `Plazo: ${lead.timeline} | Preparacion: ${lead.classification.toUpperCase()} (score ${lead.score})`;
+      document.getElementById("summaryText").textContent = leadText;
+      document.getElementById("recommendationText").textContent = "Cargando sugerencia...";
+      const recommendation = await fetchRecommendation();
+      document.getElementById("recommendationText").textContent = recommendation;
+      setAvatarState("done", `Listo. Tu nivel de preparacion actual es ${lead.classification}.`);
+    }
+
+    async function startAdviceFlow() {
+      questionIndex = 0;
+      Object.keys(profile).forEach((key) => delete profile[key]);
+      showScreen("flow");
+      stepPill.textContent = "Paso 1 de 8";
+      questionTitle.textContent = "Generando tu numero de atencion...";
+      options.innerHTML = "";
+      setAvatarState("greeting", "Comencemos. Primero voy a generar tu numero de atencion.");
+      const ticket = await createTicket();
+      setAvatarState("suggesting", `Tu numero es ${ticket.ticket_number}. Ahora te hare 7 preguntas rapidas.`);
+      renderQuestion();
+    }
+
+    async function beginAction(action) {
+      pendingAction = action;
+      if (!sessionId) {
+        await createSession();
+      }
+      showScreen("rutScreen");
+      rutInput.value = "";
+      crmLookupResult.classList.add("hidden");
+      crmLookupResult.textContent = "";
+      crmConfirmActions.classList.add("hidden");
+      crmEditForm.classList.add("hidden");
+      crmEditPhone.value = "";
+      crmEditEmail.value = "";
+      crmConfirmationResolver = null;
+      crmEditResolver = null;
+      setAvatarState("asking", "Antes de continuar, necesito tu RUT para registrar la atencion.");
+    }
+
+    function formatRut(rawValue) {
+      const clean = String(rawValue || "").toUpperCase().replace(/[^0-9K]/g, "");
+      if (clean.length <= 1) return clean;
+      return `${clean.slice(0, -1)}-${clean.slice(-1)}`;
+    }
+
+    async function waitForCrmConfirmation() {
+      return new Promise((resolve) => {
+        crmConfirmationResolver = resolve;
+      });
+    }
+
+    async function waitForCrmEdit() {
+      return new Promise((resolve) => {
+        crmEditResolver = resolve;
+      });
+    }
+
+    document.getElementById("adviseBtn").onclick = async () => {
+      await beginAction("asesoria");
+    };
+
+    document.getElementById("ticketOnlyBtn").onclick = async () => {
+      await beginAction("ticket");
+    };
+
+    async function continueAfterRut(rutValue, rutLabel) {
+      await saveAnswer("rut", rutValue, rutLabel);
+      if (rutValue !== "skip") {
+        setAvatarState("thinking", "Validando datos del cliente en CRM...");
+        const customer = await lookupCustomerInCrm(rutValue);
+        if (customer) {
+          const name = customer.name || "cliente";
+          const phone = customer.phone ? `Telefono: ${customer.phone}` : "Telefono: no disponible";
+          const email = customer.email ? `Email: ${customer.email}` : "Email: no disponible";
+          await saveAnswer("crm_customer_name", customer.name || "", customer.name || "");
+          await saveAnswer("crm_customer_phone", customer.phone || "", customer.phone || "");
+          await saveAnswer("crm_customer_email", customer.email || "", customer.email || "");
+          crmLookupResult.textContent = `Cliente encontrado: ${name} | ${phone} | ${email}`;
+          crmLookupResult.classList.remove("hidden");
+          crmConfirmActions.classList.remove("hidden");
+          setAvatarState("suggesting", `Hola ${name}, encontramos tus datos de contacto. Por favor confirma si estan correctos.`);
+          const confirmed = await waitForCrmConfirmation();
+          crmConfirmActions.classList.add("hidden");
+          if (confirmed) {
+            await saveAnswer("crm_data_confirmed", true, "Datos CRM confirmados");
+            setAvatarState("done", "Perfecto, datos confirmados. Continuemos.");
+          } else {
+            await saveAnswer("crm_data_confirmed", false, "Cliente desea corregir datos");
+            setAvatarState("asking", "Entendido. Ingresa tus datos actualizados para continuar.");
+            crmEditForm.classList.remove("hidden");
+            const updated = await waitForCrmEdit();
+            crmEditForm.classList.add("hidden");
+            await saveAnswer("crm_customer_phone_updated", updated.phone, updated.phone || "");
+            await saveAnswer("crm_customer_email_updated", updated.email, updated.email || "");
+            crmLookupResult.textContent = `Datos actualizados: Telefono ${updated.phone || "no informado"} | Email ${updated.email || "no informado"}`;
+            setAvatarState("done", "Gracias. Tus datos actualizados quedaron registrados.");
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+          }
+        } else {
+          crmLookupResult.textContent = "No encontramos datos para este RUT en CRM. Continuamos con registro manual.";
+          crmLookupResult.classList.remove("hidden");
+          setAvatarState("asking", "No encontramos datos en CRM. Continuemos con tu atencion.");
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+
+      if (pendingAction === "ticket") {
+        await saveAnswer("selected_action", "ticket", "Sacar numero de atencion");
+        showScreen("ticketOnly");
+        setAvatarState("thinking", "Generando tu numero de atencion...");
+        const res = await fetch(`${API}/queue/tickets`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ session_id: sessionId })
+        });
+        const data = await res.json();
+        document.getElementById("ticketOnlyInfo").textContent =
+          `Tu numero de atencion: ${data.ticket_number} | Espera estimada: ${data.eta_minutes} min`;
+        setAvatarState("suggesting", "Listo. Ya tienes turno. Si quieres, sigo con asesoria personalizada.");
+        return;
+      }
+
+      if (pendingAction === "asesoria") {
+        await saveAnswer("selected_action", "asesoria", "Quiero asesorarme");
+        await startAdviceFlow();
+      }
+    }
+
+    document.getElementById("saveRutBtn").onclick = async () => {
+      const value = formatRut(rutInput.value.trim().toUpperCase());
+      if (!value) return;
+      rutInput.value = value;
+      await continueAfterRut(value, value);
+    };
+
+    document.getElementById("skipRutBtn").onclick = async () => {
+      await continueAfterRut("skip", "No informado");
+    };
+
+    confirmCrmDataBtn.onclick = () => {
+      if (crmConfirmationResolver) {
+        crmConfirmationResolver(true);
+        crmConfirmationResolver = null;
+      }
+    };
+
+    editCrmDataBtn.onclick = () => {
+      if (crmConfirmationResolver) {
+        crmConfirmationResolver(false);
+        crmConfirmationResolver = null;
+      }
+    };
+
+    saveCrmEditBtn.onclick = () => {
+      if (!crmEditResolver) return;
+      const phone = crmEditPhone.value.trim();
+      const email = crmEditEmail.value.trim();
+      crmEditResolver({ phone, email });
+      crmEditResolver = null;
+    };
+
+    emailDomainQuick.onclick = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const domain = target.dataset.emailDomain;
+      if (!domain) return;
+      const current = crmEditEmail.value.trim().replace(/\s+/g, "");
+      const localPart = current.split("@")[0] || "";
+      if (!localPart) {
+        crmEditEmail.value = `usuario${domain}`;
+        return;
+      }
+      crmEditEmail.value = `${localPart}${domain}`;
+    };
+
+    rutKeypad.onclick = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const key = target.dataset.rutKey;
+      const action = target.dataset.rutAction;
+
+      if (key) {
+        if (key === "-") {
+          if (!rutInput.value.includes("-") && rutInput.value.length > 0) {
+            rutInput.value += "-";
+          }
+          return;
+        }
+        rutInput.value += key;
+        return;
+      }
+
+      if (action === "clear") {
+        rutInput.value = "";
+        return;
+      }
+      if (action === "back") {
+        rutInput.value = rutInput.value.slice(0, -1);
+        return;
+      }
+      if (action === "auto") {
+        rutInput.value = formatRut(rutInput.value);
+      }
+    };
+
+    document.getElementById("continueAdviceBtn").onclick = async () => {
+      await beginAction("asesoria");
+    };
+
+    document.getElementById("ticketOnlyBackBtn").onclick = () => {
+      showScreen("home");
+      setAvatarState("asking", "Estoy listo para ayudarte cuando quieras.");
+    };
+
+    document.getElementById("skipBtn").onclick = async () => {
+      if (questionIndex >= QUESTIONS.length) return;
+      const q = QUESTIONS[questionIndex];
+      setAvatarState("thinking", "Sin problema, pasemos a la siguiente.");
+      await saveAnswer(q.key, "skip", "No lo se");
+      questionIndex += 1;
+      renderQuestion();
+    };
+
+    saveCustomAnswerBtn.onclick = async () => {
+      if (questionIndex >= QUESTIONS.length) return;
+      const q = QUESTIONS[questionIndex];
+      const value = customInput.value.trim();
+      if (!value) return;
+      setAvatarState("thinking", "Perfecto, guardando tu respuesta.");
+      await saveAnswer(q.key, value, value);
+      questionIndex += 1;
+      setAvatarState("suggesting", "Gracias. Sigamos con la siguiente.");
+      renderQuestion();
+    };
+
+    document.getElementById("restartBtn").onclick = () => {
+      sessionId = null;
+      questionIndex = 0;
+      ticketBox.classList.add("hidden");
+      ticketBox.textContent = "";
+      showScreen("home");
+      setAvatarState("greeting", "Hola, soy Urbi. Puedes sacar tu numero o comenzar asesoria guiada.");
+    };
+
+    showScreen("home");
+    setAvatarState("greeting", "Hola, soy Urbi. Puedes sacar tu numero o comenzar asesoria guiada.");
+    scheduleBlink();
+  </script>
+</body>
+</html>
