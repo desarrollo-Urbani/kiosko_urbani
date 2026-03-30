@@ -121,6 +121,16 @@ Reglas:
 
 ---
 
+## Ajustes para Kiosco Vertical
+
+- Resolucion objetivo: `1080x1920` (portrait), equivalente a relacion visual 9:16.
+- Medidas de referencia del totem: ancho `729.6 mm`, alto `1951 mm`, area visible aprox `680.4 x 1209.6 mm`.
+- Composicion recomendada: 1 columna (avatar + burbuja + acciones), sin panel lateral.
+- Regla de burbuja: maximo 2 lineas visibles con elipsis en overflow.
+- Mensaje inicial recomendado: "Hola, soy Urbi. Saca tu numero o inicia asesoria guiada."
+
+---
+
 ## UX esperado
 
 El avatar debe:
