@@ -47,6 +47,60 @@ const QUESTIONS = [
   },
 ];
 
+// --- Teclado numérico táctil ---
+function NumericKeyboard({
+  onKey,
+}: {
+  onKey: (key: string) => void;
+}) {
+  const rows = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['K', '0', '⌫'],
+  ];
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: 10,
+      marginTop: 20,
+    }}>
+      {rows.flat().map((key) => (
+        <motion.button
+          key={key}
+          onPointerDown={(e) => { e.preventDefault(); onKey(key); }}
+          whileTap={{ scale: 0.91 }}
+          style={{
+            padding: '24px 0',
+            fontSize: key === '⌫' ? 28 : 32,
+            fontWeight: key === '⌫' ? 400 : 700,
+            fontFamily: '"Inter", -apple-system, sans-serif',
+            background: key === '⌫'
+              ? 'rgba(255,80,80,0.12)'
+              : key === 'K'
+              ? 'rgba(51,51,184,0.22)'
+              : 'rgba(255,255,255,0.07)',
+            color: key === '⌫' ? '#ff7875' : '#fff',
+            border: key === '⌫'
+              ? '1.5px solid rgba(255,80,80,0.25)'
+              : key === 'K'
+              ? `1.5px solid rgba(51,51,184,0.45)`
+              : '1.5px solid rgba(255,255,255,0.10)',
+            borderRadius: 14,
+            cursor: 'pointer',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            touchAction: 'manipulation',
+          }}
+        >
+          {key}
+        </motion.button>
+      ))}
+    </div>
+  );
+}
+
 function Btn({
   children, onClick, variant = 'green', disabled = false,
 }: {
@@ -94,8 +148,12 @@ const screenVariants = {
 
 export default function KioskScreen() {
   const [screen, setScreen]      = useState<Screen>('home');
-  const [rut, setRut]            = useState('');
+  const [rutRaw, setRutRaw]      = useState('');
   const [rutError, setRutError]  = useState('');
+  // RUT formateado para mostrar: 12345678-9
+  const rut = rutRaw.length >= 2
+    ? rutRaw.slice(0, -1) + '-' + rutRaw.slice(-1)
+    : rutRaw;
   const [step, setStep]          = useState(0);
   const [answers, setAnswers]    = useState<Record<string, string>>({});
   const [folio]                  = useState('A-12');
@@ -124,7 +182,7 @@ export default function KioskScreen() {
 
   function handleReset() {
     setScreen('home');
-    setRut('');
+    setRutRaw('');
     setRutError('');
     setStep(0);
     setAnswers({});
@@ -140,7 +198,7 @@ export default function KioskScreen() {
   }
 
   function submitRut() {
-    if (rut.length < 7) { setRutError('RUT demasiado corto.'); return; }
+    if (rutRaw.length < 7) { setRutError('RUT demasiado corto.'); return; }
     setRutError('');
     setAvatarState('thinking');
     setAvatarMessage('Buscando tu perfil...');
@@ -152,15 +210,17 @@ export default function KioskScreen() {
     }, 1400);
   }
 
-  function handleRutInput(value: string) {
-    // Format RUT: remove non-alphanumeric, auto-insert dash
-    const clean = value.replace(/[^0-9kK]/g, '').slice(0, 9);
-    if (clean.length >= 2) {
-      setRut(clean.slice(0, -1) + '-' + clean.slice(-1));
-    } else {
-      setRut(clean);
-    }
+  function handleVirtualKey(key: string) {
     setRutError('');
+    if (key === '⌫') {
+      setRutRaw((prev) => prev.slice(0, -1));
+      return;
+    }
+    const char = key.toUpperCase();
+    setRutRaw((prev) => {
+      if (prev.length >= 9) return prev;
+      return prev + char;
+    });
   }
 
   function handleAnswer(value: string) {
@@ -266,7 +326,7 @@ export default function KioskScreen() {
           {/* HOME */}
           {screen === 'home' && (
             <motion.div key="home" variants={screenVariants} initial="initial" animate="animate" exit="exit">
-              <div style={cardStyle}>
+              <div style={{ ...cardStyle, textAlign: 'center' }}>
                 <div style={{ fontSize: 13, color: GREEN, letterSpacing: '0.22em', marginBottom: 10 }}>
                   ASESORÍA PERSONALIZADA
                 </div>
@@ -278,7 +338,6 @@ export default function KioskScreen() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <Btn onClick={goToRut}>TOMAR NÚMERO DE ATENCIÓN</Btn>
-                  <Btn variant="outline" onClick={goToRut}>INICIAR ASESORÍA GUIADA</Btn>
                 </div>
               </div>
             </motion.div>
@@ -294,32 +353,38 @@ export default function KioskScreen() {
                 <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 24 }}>
                   Ingresa tu RUT
                 </div>
-                <input
-                  ref={rutInputRef}
-                  value={rut}
-                  onChange={(e) => handleRutInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && submitRut()}
-                  placeholder="12345678-9"
-                  style={{
-                    width: '100%', boxSizing: 'border-box',
-                    padding: '22px 24px', fontSize: 34, fontWeight: 700,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: `2px solid ${rutError ? '#ff4d4f' : 'rgba(255,255,255,0.15)'}`,
-                    borderRadius: 12, color: '#fff',
-                    outline: 'none', marginBottom: 10,
-                    fontFamily: '"Inter", monospace',
-                    letterSpacing: '0.08em',
-                  }}
-                />
+                <div style={{
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '22px 24px', fontSize: 34, fontWeight: 700,
+                  background: 'rgba(255,255,255,0.05)',
+                  border: `2px solid ${rutError ? '#ff4d4f' : rutRaw.length > 0 ? GREEN : 'rgba(255,255,255,0.15)'}`,
+                  borderRadius: 12, color: rutRaw.length > 0 ? '#fff' : '#555',
+                  marginBottom: 10,
+                  fontFamily: '"Inter", monospace',
+                  letterSpacing: '0.10em',
+                  minHeight: 80,
+                  display: 'flex', alignItems: 'center',
+                  transition: 'border-color 0.2s',
+                }}>
+                  {rutRaw.length > 0 ? rut : '12345678-9'}
+                  {rutRaw.length > 0 && (
+                    <motion.span
+                      animate={{ opacity: [1, 0] }}
+                      transition={{ repeat: Infinity, duration: 0.6 }}
+                      style={{ color: GREEN, marginLeft: 2, fontWeight: 300 }}
+                    >|</motion.span>
+                  )}
+                </div>
                 {rutError && (
-                  <div style={{ color: '#ff7875', fontSize: 15, marginBottom: 16 }}>{rutError}</div>
+                  <div style={{ color: '#ff7875', fontSize: 15, marginBottom: 8 }}>{rutError}</div>
                 )}
+                <NumericKeyboard onKey={handleVirtualKey} />
                 <div style={{ display: 'flex', gap: 14, marginTop: 18 }}>
                   <div style={{ flex: 1 }}>
                     <Btn variant="ghost" onClick={handleReset}>VOLVER</Btn>
                   </div>
                   <div style={{ flex: 2 }}>
-                    <Btn onClick={submitRut} disabled={rut.length < 5}>CONTINUAR</Btn>
+                    <Btn onClick={submitRut} disabled={rutRaw.length < 7}>CONTINUAR</Btn>
                   </div>
                 </div>
               </div>
