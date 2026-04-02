@@ -26,6 +26,15 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function apiGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'GET',
+    headers: { 'X-Kiosk-Token': KIOSK_TOKEN },
+  });
+  if (!res.ok) throw new Error(`API GET ${path} → ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
 type Screen = 'home' | 'rut' | 'questions' | 'done';
 
 const QUESTIONS = [
@@ -180,6 +189,12 @@ export default function KioskScreen() {
   const [eta, setEta]            = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [apiError, setApiError]  = useState<string | null>(null);
+  const [queueDisplay, setQueueDisplay] = useState<{
+    calling: string | null;
+    in_service: string | null;
+    waiting_count: number;
+    eta_minutes: number;
+  }>({ calling: null, in_service: null, waiting_count: 0, eta_minutes: 0 });
   const [countdown, setCountdown] = useState(6);
   const [avatarState, setAvatarState]     = useState<AvatarState>('idle');
   const [avatarMessage, setAvatarMessage] = useState('Hola, soy Urbi. Saca tu número o inicia asesoría guiada.');
@@ -201,6 +216,25 @@ export default function KioskScreen() {
     }, 1000);
     return () => clearInterval(tick);
   }, [screen]);
+
+  // Polling del estado de la cola (solo en pantalla home)
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const data = await apiGet<{
+          calling: string | null;
+          in_service: string | null;
+          waiting_count: number;
+          eta_minutes: number;
+        }>('/queue/display');
+        if (active) setQueueDisplay(data);
+      } catch { /* silencioso */ }
+    };
+    poll();
+    const interval = setInterval(poll, 4000);
+    return () => { active = false; clearInterval(interval); };
+  }, []);
 
   function handleReset() {
     setScreen('home');
@@ -370,7 +404,7 @@ export default function KioskScreen() {
         <AvatarRobot state={avatarState} message={avatarMessage} size={560} />
       </div>
 
-      {/* Turno badge */}
+      {/* Turno badge — muestra estado actual de la cola */}
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -380,16 +414,27 @@ export default function KioskScreen() {
           marginBottom: 28, zIndex: 1,
         }}
       >
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: '#888', letterSpacing: '0.18em', marginBottom: 4 }}>TURNO</div>
-          <div style={{ fontSize: 120, fontWeight: 900, color: GREEN, lineHeight: 1 }}>{folio}</div>
+        <div style={{ textAlign: 'center', flex: 1 }}>
+          <div style={{ fontSize: 13, color: '#f59e0b', letterSpacing: '0.18em', marginBottom: 4 }}>LLAMANDO</div>
+          <div style={{ fontSize: 72, fontWeight: 900, color: '#f59e0b', lineHeight: 1 }}>
+            {queueDisplay.calling ?? <span style={{ fontSize: 40, color: '#555' }}>—</span>}
+          </div>
         </div>
-        <div style={{ width: 1, height: 100, background: 'rgba(255,255,255,0.10)' }} />
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 14, color: '#888', letterSpacing: '0.18em', marginBottom: 4 }}>ESPERA EST.</div>
-          <div style={{ fontSize: 88, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
-            {eta}
-            <span style={{ fontSize: 32, fontWeight: 400, color: '#888', marginLeft: 6 }}>min</span>
+        <div style={{ width: 1, height: 80, background: 'rgba(255,255,255,0.10)' }} />
+        <div style={{ textAlign: 'center', flex: 1 }}>
+          <div style={{ fontSize: 13, color: GREEN, letterSpacing: '0.18em', marginBottom: 4 }}>EN ATENCIÓN</div>
+          <div style={{ fontSize: 72, fontWeight: 900, color: GREEN, lineHeight: 1 }}>
+            {queueDisplay.in_service ?? <span style={{ fontSize: 40, color: '#555' }}>—</span>}
+          </div>
+        </div>
+        <div style={{ width: 1, height: 80, background: 'rgba(255,255,255,0.10)' }} />
+        <div style={{ textAlign: 'center', flex: 1 }}>
+          <div style={{ fontSize: 13, color: '#888', letterSpacing: '0.18em', marginBottom: 4 }}>EN ESPERA</div>
+          <div style={{ fontSize: 72, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
+            {queueDisplay.waiting_count}
+            <span style={{ fontSize: 28, fontWeight: 400, color: '#888', marginLeft: 6 }}>
+              {queueDisplay.waiting_count === 1 ? 'persona' : 'personas'}
+            </span>
           </div>
         </div>
       </motion.div>

@@ -568,3 +568,33 @@ def reset_queue(
         "deleted_tickets": deleted_tickets,
         "deleted_assignments": deleted_assignments,
     }
+
+
+@router.get("/display")
+def queue_display(
+    db: Session = Depends(get_db),
+    _kiosk_ok: None = Depends(verify_kiosk_token),
+):
+    """Endpoint público para el kiosko: devuelve el ticket siendo llamado y el que está en atención."""
+    called = db.scalars(
+        select(QueueTicket)
+        .where(QueueTicket.status == "called")
+        .order_by(QueueTicket.created_at.desc())
+    ).first()
+
+    in_service = db.scalars(
+        select(QueueTicket)
+        .where(QueueTicket.status == "in_service")
+        .order_by(QueueTicket.created_at.desc())
+    ).first()
+
+    waiting_count = db.scalar(
+        select(func.count()).where(QueueTicket.status == "waiting")
+    ) or 0
+
+    return {
+        "calling": called.ticket_number if called else None,
+        "in_service": in_service.ticket_number if in_service else None,
+        "waiting_count": waiting_count,
+        "eta_minutes": waiting_count * settings.average_attention_minutes,
+    }
