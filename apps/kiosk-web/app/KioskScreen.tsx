@@ -6,7 +6,7 @@ const GREEN = '#5EB50D';
 const BLUE  = '#3333B8';
 const BG    = '#0d0d0d';
 
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = '/api/v1';
 const KIOSK_TOKEN = 'dev-kiosk-token';
 const KIOSK_ID = 'kiosk-1';
 

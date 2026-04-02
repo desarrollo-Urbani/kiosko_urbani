@@ -9,7 +9,10 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "staging", "production"] = Field(default="development", alias="APP_ENV")
     debug: str = Field(default="true", alias="DEBUG")
-    cors_allow_origins: str = Field(default="http://127.0.0.1:5173,http://localhost:5173", alias="CORS_ALLOW_ORIGINS")
+    cors_allow_origins: str = Field(
+        default="http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174,http://127.0.0.1:5175,http://localhost:5175",
+        alias="CORS_ALLOW_ORIGINS",
+    )
 
     database_url: str = Field(
         default="postgresql+psycopg://postgres:postgres@localhost:5432/urbani_kiosco",
