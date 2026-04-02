@@ -33,6 +33,7 @@
         <div style="color:var(--muted);font-size:13px">Metricas + control de turnos</div>
       </div>
       <div class="row">
+        <button class="btn" id="logoutBtn">Logout</button>
         <div>
           <div style="font-size:12px;color:var(--muted)">Scope cola</div>
           <input id="queueScope" value="kiosk-" />
@@ -88,14 +89,27 @@
 
   <script>
     const API = "/api/v1";
-    const TOKEN = "dev-kiosk-token";
+    const AUTH_STORAGE_KEY = "urbani_exec_auth";
+    let authState = null;
+
+    function loadAuthState() {
+      try {
+        authState = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "null");
+      } catch {
+        authState = null;
+      }
+    }
+    function clearAuthState() {
+      authState = null;
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
 
     async function req(path, options = {}){
       const res = await fetch(`${API}${path}`, {
         ...options,
         headers: {
           "Content-Type": "application/json",
-          "X-Kiosk-Token": TOKEN,
+          ...(authState?.access_token ? { Authorization: `Bearer ${authState.access_token}` } : {}),
           ...(options.headers || {}),
         },
       });
@@ -201,6 +215,7 @@
 
     document.getElementById("refreshBtn").onclick = () => refresh().catch((e) => alert(e.message));
     document.getElementById("resetBtn").onclick = () => resetQueue().catch((e) => alert(e.message));
+    document.getElementById("logoutBtn").onclick = () => { clearAuthState(); window.location.href = "/executive-dashboard"; };
     document.getElementById("queueScope").onchange = () => refresh().catch((e) => alert(e.message));
     document.body.addEventListener("click", (e) => {
       const target = e.target;
@@ -212,8 +227,29 @@
       }
     });
 
-    refresh();
-    setInterval(() => refresh().catch(() => null), 5000);
+    async function bootstrap() {
+      loadAuthState();
+      if (!authState?.access_token) {
+        window.location.href = "/executive-dashboard";
+        return;
+      }
+      try {
+        const me = await req("/auth/me");
+        if (!(me.role === "supervisor" || me.role === "admin")) {
+          window.location.href = "/executive-dashboard";
+          return;
+        }
+        await refresh();
+      } catch {
+        clearAuthState();
+        window.location.href = "/executive-dashboard";
+      }
+    }
+
+    bootstrap();
+    setInterval(() => {
+      if (authState?.access_token) refresh().catch(() => null);
+    }, 5000);
   </script>
 </body>
 </html>

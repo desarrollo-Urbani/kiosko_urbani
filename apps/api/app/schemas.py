@@ -147,6 +147,7 @@ class AuthLoginRequest(BaseModel):
 class AuthUserResponse(BaseModel):
     id: int
     email: str
+    name: str | None = None
     role: str
 
 

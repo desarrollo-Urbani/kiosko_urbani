@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from fastapi import Depends, Header, HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, create_engine, select, text
 from sqlalchemy.orm import Session
+from sqlalchemy.engine import URL
 
 from .config import settings
 from .database import get_db
@@ -97,13 +98,80 @@ DEFAULT_ALLOWED_EMAILS = {
 class AuthPrincipal:
     user_id: int | None
     email: str
+    name: str | None
     role: str
     auth_type: str
 
 
+_external_email_cache: set[str] = set()
+_external_email_cache_until: datetime | None = None
+_external_user_cache: dict[str, str | None] = {}
+
+
 def _resolve_allowed_emails() -> set[str]:
+    external = _load_active_users_from_mysql()
+    if external:
+        return set(external.keys())
     configured = _csv_to_set(settings.executive_allowed_emails)
     return configured or DEFAULT_ALLOWED_EMAILS
+
+
+def _load_active_users_from_mysql() -> dict[str, str | None]:
+    global _external_email_cache, _external_email_cache_until, _external_user_cache
+
+    if not settings.auth_mysql_enabled:
+        return {}
+
+    now = datetime.utcnow()
+    if _external_email_cache_until and _external_email_cache_until > now:
+        return _external_user_cache
+
+    if not all(
+        [
+            settings.auth_mysql_user,
+            settings.auth_mysql_password,
+            settings.auth_mysql_host,
+            settings.auth_mysql_database,
+        ]
+    ):
+        return {}
+
+    try:
+        url = URL.create(
+            "mysql+pymysql",
+            username=settings.auth_mysql_user,
+            password=settings.auth_mysql_password,
+            host=settings.auth_mysql_host,
+            port=settings.auth_mysql_port,
+            database=settings.auth_mysql_database,
+        )
+        engine = create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 3})
+        query = text(
+            f"SELECT {settings.auth_mysql_email_column} AS email, {settings.auth_mysql_name_column} AS nombre "
+            f"FROM {settings.auth_mysql_users_view} "
+            f"WHERE {settings.auth_mysql_active_column} = 1"
+        )
+        with engine.connect() as conn:
+            rows = conn.execute(query).all()
+        users = {
+            str(row.email).strip().lower(): (str(row.nombre).strip() if row.nombre is not None else None)
+            for row in rows
+            if row.email
+        }
+        _external_user_cache = users
+        _external_email_cache = set(users.keys())
+        _external_email_cache_until = now + timedelta(minutes=5)
+        return users
+    except Exception:
+        _external_user_cache = {}
+        _external_email_cache = set()
+        _external_email_cache_until = now + timedelta(minutes=2)
+        return {}
+
+
+def get_user_name_by_email(email: str) -> str | None:
+    users = _load_active_users_from_mysql()
+    return users.get(email.strip().lower())
 
 
 def _resolve_role(email: str) -> str:
@@ -145,11 +213,12 @@ def create_user_session(email: str, db: Session) -> dict[str, object]:
     session = AppUserSession(user_id=user.id, token=token, expires_at=expires_at)
     db.add(session)
     db.commit()
+    user_name = get_user_name_by_email(user.email)
     return {
         "access_token": token,
         "token_type": "bearer",
         "expires_at": expires_at,
-        "user": {"id": user.id, "email": user.email, "role": user.role},
+        "user": {"id": user.id, "email": user.email, "name": user_name, "role": user.role},
     }
 
 
@@ -168,7 +237,7 @@ def get_current_principal(
     db: Session = Depends(get_db),
 ) -> AuthPrincipal:
     if x_kiosk_token and x_kiosk_token == settings.kiosk_token:
-        return AuthPrincipal(user_id=None, email="kiosk@system", role="system", auth_type="kiosk_token")
+        return AuthPrincipal(user_id=None, email="kiosk@system", name="Kiosk", role="system", auth_type="kiosk_token")
 
     token = _bearer_from_header(authorization)
     if not token:
@@ -189,7 +258,13 @@ def get_current_principal(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid session user")
 
-    return AuthPrincipal(user_id=user.id, email=user.email, role=user.role, auth_type="user_session")
+    return AuthPrincipal(
+        user_id=user.id,
+        email=user.email,
+        name=get_user_name_by_email(user.email),
+        role=user.role,
+        auth_type="user_session",
+    )
 
 
 def require_roles(*roles: str, allow_kiosk: bool = True):

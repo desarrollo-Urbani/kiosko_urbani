@@ -18,6 +18,7 @@ def me(principal=Depends(get_current_principal)):
     return {
         "user_id": principal.user_id,
         "email": principal.email,
+        "name": principal.name,
         "role": principal.role,
         "auth_type": principal.auth_type,
     }
