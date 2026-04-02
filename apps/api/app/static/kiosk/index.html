@@ -1533,7 +1533,8 @@
     };
 
     skipRutBtn.onclick = async () => {
-      await continueAfterRut("skip", "No informado");
+      alert("Para generar numero de atencion debes ingresar tu RUT.");
+      setAvatarState("asking", "Necesito tu RUT para asignar el numero de atencion.");
     };
 
     confirmCrmDataBtn.onclick = () => {

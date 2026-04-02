@@ -15,6 +15,13 @@ def test_queue_ticket_status_flow_and_audit(client, db_session: Session):
     assert session_res.status_code == 200
     session_id = session_res.json()["session_id"]
 
+    r = client.post(
+        f"/api/v1/sessions/{session_id}/answers",
+        json={"question_key": "rut", "answer_value": "11111111-1", "answer_label": "11111111-1"},
+        headers=TOKEN_HEADERS,
+    )
+    assert r.status_code == 200
+
     ticket_res = client.post(
         "/api/v1/queue/tickets",
         json={"session_id": session_id, "name": "Cliente Prueba"},
@@ -63,6 +70,12 @@ def test_call_next_assigns_distinct_tickets_per_executive(client, db_session: Se
         )
         assert s.status_code == 200
         session_ids.append(s.json()["session_id"])
+        r = client.post(
+            f"/api/v1/sessions/{session_ids[-1]}/answers",
+            json={"question_key": "rut", "answer_value": f"1111111{i}-1", "answer_label": f"1111111{i}-1"},
+            headers=TOKEN_HEADERS,
+        )
+        assert r.status_code == 200
         t = client.post(
             "/api/v1/queue/tickets",
             json={"session_id": session_ids[-1], "name": f"Cliente {i}"},
@@ -93,6 +106,13 @@ def test_status_change_is_blocked_for_other_executive(client, db_session: Sessio
     )
     assert s.status_code == 200
     session_id = s.json()["session_id"]
+    r = client.post(
+        f"/api/v1/sessions/{session_id}/answers",
+        json={"question_key": "rut", "answer_value": "22222222-2", "answer_label": "22222222-2"},
+        headers=TOKEN_HEADERS,
+    )
+    assert r.status_code == 200
+
     t = client.post(
         "/api/v1/queue/tickets",
         json={"session_id": session_id, "name": "Cliente Ownership"},

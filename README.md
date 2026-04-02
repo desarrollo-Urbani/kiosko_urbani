@@ -5,12 +5,14 @@ MVP rapido alineado a los specs en `docs/specs`.
 ## Stack
 - Backend: FastAPI + SQLAlchemy
 - DB: SQLite (desarrollo rapido) / PostgreSQL 15 (produccion, con docker-compose)
-- Front: vistas estaticas servidas por FastAPI (`/kiosk`, `/dashboard`)
+- Front:
+  - Kiosco: React/Vite en `apps/kiosk-web` (puerto 5173 en dev)
+  - Dashboard: vista estatica servida por FastAPI (`/dashboard`)
 
-## Frontend canonico (Fase 1)
-- Kiosco operativo: `apps/api/app/static/kiosk/index.html` (servido en `/kiosk`).
+## Frontend canonico
+- Kiosco operativo: `apps/kiosk-web` (Vite dev server en `http://127.0.0.1:5173`).
 - Dashboard operativo: `apps/api/app/static/dashboard/index.html` (servido en `/dashboard`).
-- `apps/kiosk-web` queda como implementacion alternativa/experimental y no es la fuente de verdad en operacion.
+- Ruta `/kiosk` en API queda **deprecada** y fuera de uso.
 
 ## Arranque rapido
 1. Asegurate de tener Docker Desktop corriendo.
@@ -32,7 +34,7 @@ MVP rapido alineado a los specs en `docs/specs`.
 
 ## URLs
 - API docs: http://localhost:8000/docs
-- Kiosk MVP: http://localhost:8000/kiosk
+- Kiosk MVP (vigente): http://127.0.0.1:5173
 - Dashboard MVP: http://localhost:8000/dashboard
 
 ## Token

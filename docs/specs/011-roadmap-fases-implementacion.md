@@ -71,17 +71,17 @@ Objetivo: que cada ejecutivo opere su turno activo sin interferencias.
 Objetivo: escalar cola por sucursal/modulo y mejorar supervision.
 
 ### Checklist
-- [ ] Cola particionada por sucursal/modulo.
-- [ ] Priorizacion configurable (SLA, cita, VIP, etc.).
-- [ ] Dashboard supervisor (vista global y reasignacion).
-- [ ] Metricas operativas:
-  - [ ] espera promedio
-  - [ ] atencion promedio
-  - [ ] no-show
-  - [ ] productividad por ejecutivo
+- [x] Cola particionada por sucursal/modulo.
+- [x] Priorizacion configurable (SLA, cita, VIP, etc.).
+- [x] Dashboard supervisor (vista global y reasignacion).
+- [x] Metricas operativas:
+  - [x] espera promedio
+  - [x] atencion promedio
+  - [x] no-show
+  - [x] productividad por ejecutivo
 
 ### Estado de fase
-- Estado: **Pendiente**
+- Estado: **Completada (pendiente de aprobacion de usuario)**
 
 ---
 

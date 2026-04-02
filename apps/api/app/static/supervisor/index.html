@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urbani Supervisor</title>
+  <style>
+    :root{--bg:#f3f6f9;--card:#fff;--line:#d9e2ea;--ink:#1c2c34;--muted:#627885;--brand:#0b89ac;--warn:#a53a4a}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",sans-serif;padding:18px}
+    .wrap{max-width:1250px;margin:0 auto;display:grid;gap:12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .kpi{border:1px solid var(--line);border-radius:10px;padding:12px;background:#fff}
+    .kpi .label{font-size:12px;color:var(--muted)}
+    .kpi .value{font-size:28px;font-weight:800}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
+    th{font-size:13px;color:var(--muted)}
+    .btn{height:38px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:700}
+    .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+    .btn.warn{background:#ffeef1;border-color:#f1c4cd;color:var(--warn)}
+    input,select{height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+    @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card row" style="justify-content:space-between">
+      <div>
+        <div style="font-size:24px;font-weight:800">Dashboard Supervisor</div>
+        <div style="color:var(--muted);font-size:13px">Metricas + control de turnos</div>
+      </div>
+      <div class="row">
+        <div>
+          <div style="font-size:12px;color:var(--muted)">Scope cola</div>
+          <input id="queueScope" value="kiosk-" />
+        </div>
+        <button class="btn primary" id="refreshBtn">Actualizar</button>
+        <button class="btn warn" id="resetBtn">Resetear turnos</button>
+      </div>
+    </section>
+
+    <section class="card grid">
+      <div class="kpi"><div class="label">Esperando</div><div id="kpiWaiting" class="value">0</div></div>
+      <div class="kpi"><div class="label">Atendidos</div><div id="kpiCompleted" class="value">0</div></div>
+      <div class="kpi"><div class="label">No show</div><div id="kpiNoShow" class="value">0</div></div>
+      <div class="kpi"><div class="label">No show %</div><div id="kpiNoShowRate" class="value">0.0</div></div>
+    </section>
+
+    <section class="card grid">
+      <div class="kpi"><div class="label">Espera promedio (min)</div><div id="kpiWaitAvg" class="value">0</div></div>
+      <div class="kpi"><div class="label">Atencion promedio (min)</div><div id="kpiServiceAvg" class="value">0</div></div>
+      <div class="kpi" style="grid-column:span 2"><div class="label">Scope</div><div id="kpiScope" class="value" style="font-size:22px">global</div></div>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 10px">Turnos activos (transferir)</h3>
+      <table>
+        <thead>
+          <tr><th>Turno</th><th>Estado</th><th>Ejecutivo actual</th><th>Transferir a</th><th>Accion</th></tr>
+        </thead>
+        <tbody id="activeBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 10px">Cola de espera (priorizar)</h3>
+      <table>
+        <thead>
+          <tr><th>Turno</th><th>Espera (min)</th><th>Perfilado</th><th>Accion</th></tr>
+        </thead>
+        <tbody id="waitingBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 10px">Productividad por ejecutivo</h3>
+      <table>
+        <thead>
+          <tr><th>Ejecutivo</th><th>Llamados</th><th>En atencion</th><th>Completados</th><th>No show</th><th>Prom. atencion (min)</th></tr>
+        </thead>
+        <tbody id="execBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const API = "/api/v1";
+    const TOKEN = "dev-kiosk-token";
+
+    async function req(path, options = {}){
+      const res = await fetch(`${API}${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Kiosk-Token": TOKEN,
+          ...(options.headers || {}),
+        },
+      });
+      if(!res.ok){
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+      return res.json();
+    }
+    function scopeValue(){ return (document.getElementById("queueScope").value || "").trim(); }
+
+    async function refresh(){
+      const scope = encodeURIComponent(scopeValue());
+      const summary = await req(`/queue/metrics/summary?queue_scope=${scope}`);
+      const byExec = await req(`/queue/metrics/executives?queue_scope=${scope}`);
+      const waiting = await req(`/queue/tickets?status=waiting&queue_scope=${scope}`);
+      const called = await req(`/queue/tickets?status=called&queue_scope=${scope}`);
+      const inService = await req(`/queue/tickets?status=in_service&queue_scope=${scope}`);
+
+      document.getElementById("kpiWaiting").textContent = summary.waiting_count;
+      document.getElementById("kpiCompleted").textContent = summary.completed_count;
+      document.getElementById("kpiNoShow").textContent = summary.no_show_count;
+      document.getElementById("kpiNoShowRate").textContent = summary.no_show_rate_percent;
+      document.getElementById("kpiWaitAvg").textContent = summary.avg_wait_minutes;
+      document.getElementById("kpiServiceAvg").textContent = summary.avg_service_minutes;
+      document.getElementById("kpiScope").textContent = summary.queue_scope;
+
+      const activeBody = document.getElementById("activeBody");
+      activeBody.innerHTML = "";
+      [...inService.items, ...called.items].forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.ticket_number}</td>
+          <td>${row.status}</td>
+          <td>${row.executive_id || "-"}</td>
+          <td><input data-transfer="${row.id}" value="" placeholder="exec-2" /></td>
+          <td><button class="btn" data-transfer-btn="${row.id}" data-from="${row.executive_id || ""}">Transferir</button></td>
+        `;
+        activeBody.appendChild(tr);
+      });
+
+      const waitingBody = document.getElementById("waitingBody");
+      waitingBody.innerHTML = "";
+      const now = new Date();
+      waiting.items.forEach((row) => {
+        const waitMin = Math.max(0, Math.floor((now - new Date(row.created_at)) / 60000));
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.ticket_number}</td>
+          <td>${waitMin}</td>
+          <td>${row.profiled ? "Si" : "No"}</td>
+          <td><button class="btn" data-prio="${row.id}">Priorizar</button></td>
+        `;
+        waitingBody.appendChild(tr);
+      });
+
+      const execBody = document.getElementById("execBody");
+      execBody.innerHTML = "";
+      (byExec.items || []).forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.executive_id}</td>
+          <td>${row.called}</td>
+          <td>${row.in_service}</td>
+          <td>${row.completed}</td>
+          <td>${row.no_show}</td>
+          <td>${row.avg_service_minutes}</td>
+        `;
+        execBody.appendChild(tr);
+      });
+    }
+
+    async function prioritize(ticketId){
+      await req(`/queue/tickets/${ticketId}/prioritize`, {
+        method: "POST",
+        body: JSON.stringify({ priority_minutes: 300 }),
+      });
+      await refresh();
+    }
+
+    async function transfer(ticketId, fromExecutive){
+      const toInput = document.querySelector(`[data-transfer="${ticketId}"]`);
+      const toExecutive = (toInput?.value || "").trim();
+      if(!toExecutive) { alert("Ingresa ejecutivo destino"); return; }
+      await req(`/queue/tickets/${ticketId}/transfer`, {
+        method: "POST",
+        body: JSON.stringify({
+          from_executive_id: fromExecutive,
+          to_executive_id: toExecutive,
+        }),
+      });
+      await refresh();
+    }
+
+    async function resetQueue(){
+      if(!confirm("Esto eliminara turnos del scope actual. Continuar?")) return;
+      await req("/queue/admin/reset", {
+        method: "POST",
+        body: JSON.stringify({ queue_scope: scopeValue() || null }),
+      });
+      await refresh();
+    }
+
+    document.getElementById("refreshBtn").onclick = () => refresh().catch((e) => alert(e.message));
+    document.getElementById("resetBtn").onclick = () => resetQueue().catch((e) => alert(e.message));
+    document.getElementById("queueScope").onchange = () => refresh().catch((e) => alert(e.message));
+    document.body.addEventListener("click", (e) => {
+      const target = e.target;
+      if (target.matches("[data-prio]")) {
+        prioritize(target.getAttribute("data-prio")).catch((err) => alert(err.message));
+      }
+      if (target.matches("[data-transfer-btn]")) {
+        transfer(target.getAttribute("data-transfer-btn"), target.getAttribute("data-from")).catch((err) => alert(err.message));
+      }
+    });
+
+    refresh();
+    setInterval(() => refresh().catch(() => null), 5000);
+  </script>
+</body>
+</html>

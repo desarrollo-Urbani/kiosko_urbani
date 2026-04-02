@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -30,7 +30,10 @@ def health():
 
 @app.get("/kiosk", include_in_schema=False)
 def kiosk_page():
-    return FileResponse(static_dir / "kiosk" / "index.html")
+    raise HTTPException(
+        status_code=410,
+        detail="Kiosk static route is deprecated. Use the kiosk-web app (Vite) on port 5173.",
+    )
 
 
 @app.get("/dashboard", include_in_schema=False)
@@ -41,3 +44,8 @@ def dashboard_page():
 @app.get("/executive-dashboard", include_in_schema=False)
 def executive_dashboard_page():
     return FileResponse(static_dir / "executive" / "index.html")
+
+
+@app.get("/supervisor-dashboard", include_in_schema=False)
+def supervisor_dashboard_page():
+    return FileResponse(static_dir / "supervisor" / "index.html")

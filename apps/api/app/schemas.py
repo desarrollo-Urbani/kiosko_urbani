@@ -45,6 +45,29 @@ class QueueTicketStatusPatchRequest(BaseModel):
 
 class QueueCallNextRequest(BaseModel):
     executive_id: str
+    queue_scope: str | None = None
+    priority_mode: str = "fifo"
+
+    @field_validator("priority_mode")
+    @classmethod
+    def validate_priority_mode(cls, value: str) -> str:
+        allowed = {"fifo", "smart"}
+        if value not in allowed:
+            raise ValueError(f"priority_mode must be one of: {', '.join(sorted(allowed))}")
+        return value
+
+
+class QueueTransferRequest(BaseModel):
+    from_executive_id: str
+    to_executive_id: str
+
+
+class QueuePrioritizeRequest(BaseModel):
+    priority_minutes: int = 240
+
+
+class QueueAdminResetRequest(BaseModel):
+    queue_scope: str | None = None
 
 
 class RecommendationRunRequest(BaseModel):

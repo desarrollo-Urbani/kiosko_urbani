@@ -35,6 +35,7 @@
     .btn{min-height:52px;padding:0 20px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:700;cursor:pointer}
     .btn.ok{background:#eaf8ee;border-color:#cbe9d4;color:#1e6f3b}
     .btn.end{background:#fff4df;border-color:#f2dab0;color:#8a6206}
+    .btn.warn{background:#ffecee;border-color:#f7c4cb;color:#a43245}
     table{width:100%;border-collapse:collapse}
     th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
     th{font-size:13px;color:var(--muted)}
@@ -51,8 +52,6 @@
         <div class="meta">Operacion de turnos en tiempo real</div>
       </div>
       <div style="text-align:right">
-        <div class="meta">Ejecutivo</div>
-        <input id="executiveId" value="exec-1" style="height:34px;padding:0 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px"/>
         <div id="stateText" class="state available">Disponible</div>
         <div id="queueStats" class="meta">Esperando: 0</div>
       </div>
@@ -63,9 +62,24 @@
       <div id="currentPanel" style="display:none">
         <div style="font-size:54px;font-weight:900;line-height:1" id="currentTicket">A-00</div>
         <div class="meta" id="currentInfo">Cliente: N/D</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
+          <span class="meta">RUT:</span>
+          <code id="currentRut" style="background:#f2f6fa;border-radius:6px;padding:4px 8px">-</code>
+          <button class="btn" id="copyRutBtn">Copiar RUT</button>
+          <span class="meta">Perfilado:</span>
+          <strong id="currentProfiled">No</strong>
+        </div>
+        <div class="meta" style="margin-top:8px">Opciones elegidas</div>
+        <div id="currentProfile" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
+          <span class="meta">Transferir a:</span>
+          <input id="transferTo" value="exec-2" style="height:38px;padding:0 10px;border:1px solid var(--line);border-radius:8px"/>
+          <button class="btn" id="transferBtn">Transferir turno</button>
+        </div>
         <div class="actions" style="margin-top:12px">
           <button class="btn ok" id="startBtn">Iniciar atencion</button>
           <button class="btn end" id="finishBtn">Finalizar atencion</button>
+          <button class="btn warn" id="abandonBtn">Marcar abandonado</button>
         </div>
       </div>
     </section>
@@ -89,10 +103,9 @@
     const API = "/api/v1";
     const TOKEN = "dev-kiosk-token";
     let current = null;
-    function executiveId() {
-      const value = (document.getElementById("executiveId").value || "").trim();
-      return value || "exec-1";
-    }
+    const EXECUTIVE_ID = "exec-1";
+    const QUEUE_SCOPE = "kiosk-";
+    const PRIORITY_MODE = "smart";
 
     async function req(path, options = {}) {
       const res = await fetch(`${API}${path}`, {
@@ -108,10 +121,11 @@
     }
 
     async function refresh() {
-      const waiting = await req("/queue/tickets?status=waiting");
-      const called = await req("/queue/tickets?status=called");
-      const inService = await req("/queue/tickets?status=in_service");
-      const me = executiveId();
+      const scope = encodeURIComponent(QUEUE_SCOPE);
+      const waiting = await req(`/queue/tickets?status=waiting&queue_scope=${scope}`);
+      const called = await req(`/queue/tickets?status=called&queue_scope=${scope}`);
+      const inService = await req(`/queue/tickets?status=in_service&queue_scope=${scope}`);
+      const me = EXECUTIVE_ID;
       const ownInService = inService.items.find((t) => t.executive_id === me);
       const ownCalled = called.items.find((t) => t.executive_id === me);
       current = ownInService || ownCalled || null;
@@ -128,6 +142,9 @@
         statusText.className = "state available";
         document.getElementById("currentEmpty").style.display = "block";
         document.getElementById("currentPanel").style.display = "none";
+        document.getElementById("currentRut").textContent = "-";
+        document.getElementById("currentProfiled").textContent = "No";
+        document.getElementById("currentProfile").innerHTML = "";
         callBtn.disabled = false;
       } else {
         const isInService = current.status === "in_service";
@@ -137,6 +154,21 @@
         document.getElementById("currentPanel").style.display = "block";
         document.getElementById("currentTicket").textContent = current.ticket_number;
         document.getElementById("currentInfo").textContent = `Sesion: ${current.session_id}`;
+        document.getElementById("currentRut").textContent = current.rut || "-";
+        document.getElementById("currentProfiled").textContent = current.profiled ? "Si" : "No";
+        const profileNode = document.getElementById("currentProfile");
+        profileNode.innerHTML = "";
+        const entries = Object.entries(current.profile || {});
+        if (entries.length === 0) {
+          profileNode.innerHTML = '<span class="meta">Sin respuestas de perfilado.</span>';
+        } else {
+          entries.forEach(([k, v]) => {
+            const item = document.createElement("span");
+            item.className = "pill yes";
+            item.textContent = `${k}: ${String(v)}`;
+            profileNode.appendChild(item);
+          });
+        }
         callBtn.disabled = true;
         startBtn.disabled = isInService;
         finishBtn.disabled = false;
@@ -164,7 +196,11 @@
     async function callNext() {
       await req("/queue/call-next", {
         method: "POST",
-        body: JSON.stringify({ executive_id: executiveId() }),
+        body: JSON.stringify({
+          executive_id: EXECUTIVE_ID,
+          queue_scope: QUEUE_SCOPE || null,
+          priority_mode: PRIORITY_MODE,
+        }),
       });
       await refresh();
     }
@@ -173,7 +209,23 @@
       if (!current) return;
       await req(`/queue/tickets/${current.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status, executive_id: executiveId() }),
+        body: JSON.stringify({ status, executive_id: EXECUTIVE_ID }),
+      });
+      await refresh();
+    }
+    async function transferCurrent() {
+      if (!current) return;
+      const toExecutive = (document.getElementById("transferTo").value || "").trim();
+      if (!toExecutive) {
+        alert("Ingresa ejecutivo destino");
+        return;
+      }
+      await req(`/queue/tickets/${current.id}/transfer`, {
+        method: "POST",
+        body: JSON.stringify({
+          from_executive_id: EXECUTIVE_ID,
+          to_executive_id: toExecutive,
+        }),
       });
       await refresh();
     }
@@ -181,7 +233,13 @@
     document.getElementById("callNextBtn").onclick = () => callNext().catch((e) => alert(e.message));
     document.getElementById("startBtn").onclick = () => updateCurrent("in_service").catch((e) => alert(e.message));
     document.getElementById("finishBtn").onclick = () => updateCurrent("completed").catch((e) => alert(e.message));
-    document.getElementById("executiveId").onchange = () => refresh().catch((e) => alert(e.message));
+    document.getElementById("abandonBtn").onclick = () => updateCurrent("no_show").catch((e) => alert(e.message));
+    document.getElementById("transferBtn").onclick = () => transferCurrent().catch((e) => alert(e.message));
+    document.getElementById("copyRutBtn").onclick = async () => {
+      const value = document.getElementById("currentRut").textContent || "";
+      if (!value || value === "-") return;
+      try { await navigator.clipboard.writeText(value); } catch {}
+    };
 
     refresh();
     setInterval(() => refresh().catch(() => null), 5000);
