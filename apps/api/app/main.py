@@ -1,12 +1,26 @@
 from pathlib import Path
+import logging
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .config import settings
 from .routers import auth, crm, dashboard, events, llm, queue, recommendations, sessions
 
-app = FastAPI(title="Urbani Kiosco API", version="0.1.0")
+logging.basicConfig(level=logging.INFO if not settings.debug_enabled else logging.DEBUG)
+logger = logging.getLogger("urbani.api")
+
+app = FastAPI(title="Urbani Kiosco API", version="0.1.0", debug=settings.debug_enabled)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(queue.router, prefix="/api/v1")
@@ -23,7 +37,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "environment": settings.app_env}
 
 
 @app.get("/kiosk", include_in_schema=False)
@@ -47,3 +61,6 @@ def executive_dashboard_page():
 @app.get("/supervisor-dashboard", include_in_schema=False)
 def supervisor_dashboard_page():
     return FileResponse(static_dir / "supervisor" / "index.html")
+
+
+logger.info("API started in %s mode | debug=%s", settings.app_env, settings.debug_enabled)

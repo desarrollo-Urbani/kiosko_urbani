@@ -35,6 +35,17 @@ MVP rapido alineado a los specs en `docs/specs`.
 5. Ejecutar API:
    - `uvicorn apps.api.app.main:app --reload --port 8000`
 
+## Ambientes (dev/staging/prod)
+- Archivo principal local: `.env`
+- Plantillas:
+  - `.env.example` (desarrollo)
+  - `.env.staging.example`
+  - `.env.production.example`
+- Variables clave:
+  - `APP_ENV=development|staging|production`
+  - `DEBUG=true|false`
+  - `CORS_ALLOW_ORIGINS` (separado por comas)
+
 ## Migraciones DB (Alembic)
 - Crear nueva migracion:
   - `cd apps/api`

@@ -91,7 +91,7 @@ Objetivo: endurecer seguridad, despliegue y observabilidad.
 ### Checklist
 - [x] Migraciones (Alembic) y versionado de esquema.
 - [x] Auth por roles para produccion.
-- [ ] Configuracion por ambiente (dev/staging/prod).
+- [x] Configuracion por ambiente (dev/staging/prod).
 - [ ] Observabilidad y trazas (logs estructurados, errores).
 - [ ] Hardening de seguridad y privacidad de datos sensibles.
 
