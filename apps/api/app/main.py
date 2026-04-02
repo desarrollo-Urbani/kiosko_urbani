@@ -36,3 +36,8 @@ def kiosk_page():
 @app.get("/dashboard", include_in_schema=False)
 def dashboard_page():
     return FileResponse(static_dir / "dashboard" / "index.html")
+
+
+@app.get("/executive-dashboard", include_in_schema=False)
+def executive_dashboard_page():
+    return FileResponse(static_dir / "executive" / "index.html")

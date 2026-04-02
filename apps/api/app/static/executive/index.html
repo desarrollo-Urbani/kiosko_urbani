@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urbani Ejecutivo</title>
+  <style>
+    :root{
+      --bg:#f4f7fa;
+      --card:#ffffff;
+      --line:#d9e3ea;
+      --ink:#1d2a33;
+      --muted:#5d7482;
+      --brand:#0b89ac;
+      --ok:#3a9c5b;
+      --warn:#b8871d;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",sans-serif;padding:18px}
+    .wrap{max-width:1100px;margin:0 auto;display:grid;gap:12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+    .header{display:flex;justify-content:space-between;align-items:center}
+    .title{font-size:24px;font-weight:700}
+    .meta{font-size:13px;color:var(--muted)}
+    .state{font-weight:700}
+    .state.available{color:var(--ok)}
+    .state.called{color:var(--brand)}
+    .state.in_service{color:var(--warn)}
+    .primary{
+      width:100%;min-height:72px;border:none;border-radius:14px;background:var(--brand);color:#fff;
+      font-weight:800;font-size:28px;cursor:pointer
+    }
+    .primary:disabled{opacity:.45;cursor:not-allowed}
+    .actions{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{min-height:52px;padding:0 20px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:700;cursor:pointer}
+    .btn.ok{background:#eaf8ee;border-color:#cbe9d4;color:#1e6f3b}
+    .btn.end{background:#fff4df;border-color:#f2dab0;color:#8a6206}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
+    th{font-size:13px;color:var(--muted)}
+    .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700}
+    .pill.yes{background:#e8f7ec;color:#1f7a42}
+    .pill.no{background:#f2f5f7;color:#667985}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card header">
+      <div>
+        <div class="title">Dashboard Ejecutivo</div>
+        <div class="meta">Operacion de turnos en tiempo real</div>
+      </div>
+      <div style="text-align:right">
+        <div class="meta">Ejecutivo</div>
+        <input id="executiveId" value="exec-1" style="height:34px;padding:0 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px"/>
+        <div id="stateText" class="state available">Disponible</div>
+        <div id="queueStats" class="meta">Esperando: 0</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div id="currentEmpty" class="meta">Sin turno en atencion</div>
+      <div id="currentPanel" style="display:none">
+        <div style="font-size:54px;font-weight:900;line-height:1" id="currentTicket">A-00</div>
+        <div class="meta" id="currentInfo">Cliente: N/D</div>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn ok" id="startBtn">Iniciar atencion</button>
+          <button class="btn end" id="finishBtn">Finalizar atencion</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <button class="primary" id="callNextBtn">LLAMAR SIGUIENTE</button>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 10px">Cola de espera</h3>
+      <table>
+        <thead>
+          <tr><th>Turno</th><th>Tiempo esperando (min)</th><th>Perfilado</th></tr>
+        </thead>
+        <tbody id="queueBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const API = "/api/v1";
+    const TOKEN = "dev-kiosk-token";
+    let current = null;
+    function executiveId() {
+      const value = (document.getElementById("executiveId").value || "").trim();
+      return value || "exec-1";
+    }
+
+    async function req(path, options = {}) {
+      const res = await fetch(`${API}${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Kiosk-Token": TOKEN,
+          ...(options.headers || {}),
+        },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function refresh() {
+      const waiting = await req("/queue/tickets?status=waiting");
+      const called = await req("/queue/tickets?status=called");
+      const inService = await req("/queue/tickets?status=in_service");
+      const me = executiveId();
+      const ownInService = inService.items.find((t) => t.executive_id === me);
+      const ownCalled = called.items.find((t) => t.executive_id === me);
+      current = ownInService || ownCalled || null;
+
+      const statusText = document.getElementById("stateText");
+      const callBtn = document.getElementById("callNextBtn");
+      const startBtn = document.getElementById("startBtn");
+      const finishBtn = document.getElementById("finishBtn");
+
+      document.getElementById("queueStats").textContent = `Esperando: ${waiting.items.length}`;
+
+      if (!current) {
+        statusText.textContent = "Disponible";
+        statusText.className = "state available";
+        document.getElementById("currentEmpty").style.display = "block";
+        document.getElementById("currentPanel").style.display = "none";
+        callBtn.disabled = false;
+      } else {
+        const isInService = current.status === "in_service";
+        statusText.textContent = isInService ? "En atencion" : "Turno llamado";
+        statusText.className = `state ${current.status}`;
+        document.getElementById("currentEmpty").style.display = "none";
+        document.getElementById("currentPanel").style.display = "block";
+        document.getElementById("currentTicket").textContent = current.ticket_number;
+        document.getElementById("currentInfo").textContent = `Sesion: ${current.session_id}`;
+        callBtn.disabled = true;
+        startBtn.disabled = isInService;
+        finishBtn.disabled = false;
+      }
+
+      const tbody = document.getElementById("queueBody");
+      tbody.innerHTML = "";
+      const now = new Date();
+      waiting.items.forEach((item) => {
+        const created = new Date(item.created_at);
+        const waitMin = Math.max(0, Math.floor((now - created) / 60000));
+        const tr = document.createElement("tr");
+        const pill = item.profiled
+          ? '<span class="pill yes">Si</span>'
+          : '<span class="pill no">No</span>';
+        tr.innerHTML = `
+          <td>${item.ticket_number}</td>
+          <td>${waitMin}</td>
+          <td>${pill}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function callNext() {
+      await req("/queue/call-next", {
+        method: "POST",
+        body: JSON.stringify({ executive_id: executiveId() }),
+      });
+      await refresh();
+    }
+
+    async function updateCurrent(status) {
+      if (!current) return;
+      await req(`/queue/tickets/${current.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, executive_id: executiveId() }),
+      });
+      await refresh();
+    }
+
+    document.getElementById("callNextBtn").onclick = () => callNext().catch((e) => alert(e.message));
+    document.getElementById("startBtn").onclick = () => updateCurrent("in_service").catch((e) => alert(e.message));
+    document.getElementById("finishBtn").onclick = () => updateCurrent("completed").catch((e) => alert(e.message));
+    document.getElementById("executiveId").onchange = () => refresh().catch((e) => alert(e.message));
+
+    refresh();
+    setInterval(() => refresh().catch(() => null), 5000);
+  </script>
+</body>
+</html>

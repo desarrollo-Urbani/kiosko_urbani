@@ -30,6 +30,23 @@ class TicketResponse(BaseModel):
     eta_minutes: int
 
 
+class QueueTicketStatusPatchRequest(BaseModel):
+    status: str
+    executive_id: str | None = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        allowed = {"waiting", "called", "in_service", "completed", "no_show"}
+        if value not in allowed:
+            raise ValueError(f"status must be one of: {', '.join(sorted(allowed))}")
+        return value
+
+
+class QueueCallNextRequest(BaseModel):
+    executive_id: str
+
+
 class RecommendationRunRequest(BaseModel):
     session_id: str
 
