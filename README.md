@@ -28,9 +28,23 @@ MVP rapido alineado a los specs en `docs/specs`.
    - `.\.venv\Scripts\Activate.ps1`
    - `pip install -r apps/api/requirements.txt`
 4. Seed de datos:
+   - `cd apps/api`
+   - `alembic upgrade head`
+   - `cd ../..`
    - `python apps/api/scripts/seed_data.py`
 5. Ejecutar API:
    - `uvicorn apps.api.app.main:app --reload --port 8000`
+
+## Migraciones DB (Alembic)
+- Crear nueva migracion:
+  - `cd apps/api`
+  - `alembic revision -m "descripcion_cambio"`
+- Aplicar migraciones:
+  - `cd apps/api`
+  - `alembic upgrade head`
+- Revertir una migracion:
+  - `cd apps/api`
+  - `alembic downgrade -1`
 
 ## URLs
 - API docs: http://localhost:8000/docs

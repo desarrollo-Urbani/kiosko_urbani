@@ -4,12 +4,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .database import Base, engine
 from .routers import crm, dashboard, events, llm, queue, recommendations, sessions
 
 app = FastAPI(title="Urbani Kiosco API", version="0.1.0")
-
-Base.metadata.create_all(bind=engine)
 
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(queue.router, prefix="/api/v1")

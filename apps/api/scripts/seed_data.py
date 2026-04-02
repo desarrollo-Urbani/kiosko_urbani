@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -6,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from sqlalchemy import select
 
-from apps.api.app.database import Base, SessionLocal, engine
+from apps.api.app.database import SessionLocal
 from apps.api.app.models import Project, Property
 
 
@@ -47,7 +46,6 @@ def main():
     if not env_path.exists():
         print("No se encontro .env. Usa .env.example como base.")
 
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
     try:
