@@ -6,6 +6,26 @@ const GREEN = '#5EB50D';
 const BLUE  = '#3333B8';
 const BG    = '#0d0d0d';
 
+const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const KIOSK_TOKEN = 'dev-kiosk-token';
+const KIOSK_ID = 'kiosk-1';
+
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Kiosk-Token': KIOSK_TOKEN,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`API ${path} → ${res.status}: ${err}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 type Screen = 'home' | 'rut' | 'questions' | 'done';
 
 const QUESTIONS = [
@@ -156,8 +176,10 @@ export default function KioskScreen() {
     : rutRaw;
   const [step, setStep]          = useState(0);
   const [answers, setAnswers]    = useState<Record<string, string>>({});
-  const [folio]                  = useState('A-12');
-  const [eta]                    = useState(5);
+  const [folio, setFolio]        = useState('');
+  const [eta, setEta]            = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [apiError, setApiError]  = useState<string | null>(null);
   const [countdown, setCountdown] = useState(6);
   const [avatarState, setAvatarState]     = useState<AvatarState>('idle');
   const [avatarMessage, setAvatarMessage] = useState('Hola, soy Urbi. Saca tu número o inicia asesoría guiada.');
@@ -182,6 +204,10 @@ export default function KioskScreen() {
 
   function handleReset() {
     setScreen('home');
+    setSessionId(null);
+    setApiError(null);
+    setFolio('');
+    setEta(0);
     setRutRaw('');
     setRutError('');
     setStep(0);
@@ -190,24 +216,42 @@ export default function KioskScreen() {
     setAvatarMessage('Hola, soy Urbi. Saca tu número o inicia asesoría guiada.');
   }
 
-  function goToRut() {
+  async function goToRut() {
+    setApiError(null);
+    setAvatarState('thinking');
+    setAvatarMessage('Un momento...');
+    try {
+      const data = await apiPost<{ session_id: string; status: string }>('/sessions/', { kiosk_id: KIOSK_ID });
+      setSessionId(data.session_id);
+    } catch {
+      // si la API no está disponible, dejamos sessionId=null y seguimos igual
+    }
     setAvatarState('active');
     setAvatarMessage('Ingresa tu RUT para identificarte. Sin puntos, con guión.');
     setScreen('rut');
     setTimeout(() => rutInputRef.current?.focus(), 400);
   }
 
-  function submitRut() {
+  async function submitRut() {
     if (rutRaw.length < 7) { setRutError('RUT demasiado corto.'); return; }
     setRutError('');
     setAvatarState('thinking');
     setAvatarMessage('Buscando tu perfil...');
+    if (sessionId) {
+      try {
+        await apiPost('/sessions/' + sessionId + '/answers', {
+          question_key: 'rut',
+          answer_value: rut,
+          answer_label: rut,
+        });
+      } catch { /* continuar aunque falle */ }
+    }
     setTimeout(() => {
       setAvatarState('active');
       setAvatarMessage('¡Listo! Ahora cuéntame un poco sobre lo que buscas.');
       setStep(0);
       setScreen('questions');
-    }, 1400);
+    }, 900);
   }
 
   function handleVirtualKey(key: string) {
@@ -223,16 +267,47 @@ export default function KioskScreen() {
     });
   }
 
-  function handleAnswer(value: string) {
-    const key = QUESTIONS[step].key;
-    const newAnswers = { ...answers, [key]: value };
+  async function handleAnswer(value: string) {
+    const q = QUESTIONS[step];
+    const label = q.options.find((o) => o.value === value)?.label ?? value;
+    const newAnswers = { ...answers, [q.key]: value };
     setAnswers(newAnswers);
+
+    if (sessionId) {
+      try {
+        await apiPost('/sessions/' + sessionId + '/answers', {
+          question_key: q.key,
+          answer_value: value,
+          answer_label: label,
+        });
+      } catch { /* continuar aunque falle */ }
+    }
+
     if (step < QUESTIONS.length - 1) {
       setAvatarMessage(QUESTIONS[step + 1].text);
       setStep(step + 1);
     } else {
+      // Crear ticket en la cola
+      setAvatarState('thinking');
+      setAvatarMessage('Generando tu número de turno...');
+      let ticketNumber = 'A-??';
+      let etaMin = 0;
+      if (sessionId) {
+        try {
+          const ticket = await apiPost<{ ticket_number: string; eta_minutes: number }>('/queue/tickets', {
+            session_id: sessionId,
+          });
+          ticketNumber = ticket.ticket_number;
+          etaMin = ticket.eta_minutes;
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setApiError(msg);
+        }
+      }
+      setFolio(ticketNumber);
+      setEta(etaMin);
       setAvatarState('success');
-      setAvatarMessage(`Tu turno es el ${folio}. Un ejecutivo te atenderá pronto.`);
+      setAvatarMessage(`Tu turno es el ${ticketNumber}. Un ejecutivo te atenderá pronto.`);
       setScreen('done');
     }
   }
