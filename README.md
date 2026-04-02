@@ -55,6 +55,16 @@ MVP rapido alineado a los specs en `docs/specs`.
 Para endpoints del kiosco enviar header:
 - `X-Kiosk-Token: dev-kiosk-token`
 
+## Auth usuario (sin contraseña)
+- Login:
+  - `POST /api/v1/auth/login` con body `{"email":"usuario@dominio.cl"}`
+- Perfil actual:
+  - `GET /api/v1/auth/me` con header `Authorization: Bearer <token>`
+- Roles soportados:
+  - `executive`
+  - `supervisor`
+  - `admin`
+
 ## Cobertura MVP
 - Sesiones, respuestas y eventos UX
 - Emision de tickets con ETA simulado

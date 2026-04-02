@@ -138,3 +138,20 @@ class LeadStatusPatchRequest(BaseModel):
 class LeadSummaryResponse(BaseModel):
     executive_summary: list[str]
     suggested_approach: str
+
+
+class AuthLoginRequest(BaseModel):
+    email: str
+
+
+class AuthUserResponse(BaseModel):
+    id: int
+    email: str
+    role: str
+
+
+class AuthLoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    expires_at: datetime
+    user: AuthUserResponse

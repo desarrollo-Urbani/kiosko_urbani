@@ -5,7 +5,7 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth import verify_kiosk_token
+from ..auth import AuthPrincipal, require_roles, verify_kiosk_token
 from ..config import settings
 from ..database import get_db
 from ..models import EventLog, KioskSession, QueueExecutiveAssignment, QueueTicket, SessionAnswer
@@ -20,7 +20,7 @@ from ..schemas import (
 )
 from ..services.lead_service import create_or_update_lead
 
-router = APIRouter(prefix="/queue", tags=["queue"], dependencies=[Depends(verify_kiosk_token)])
+router = APIRouter(prefix="/queue", tags=["queue"])
 
 
 def _scope_matches(scope: str | None, kiosk_device_id: str | None) -> bool:
@@ -65,7 +65,11 @@ def _extract_ticket_customer_context(answer_rows: list[SessionAnswer]) -> tuple[
 
 
 @router.post("/tickets", response_model=TicketResponse)
-def create_ticket(payload: TicketCreateRequest, db: Session = Depends(get_db)):
+def create_ticket(
+    payload: TicketCreateRequest,
+    db: Session = Depends(get_db),
+    _kiosk_ok: None = Depends(verify_kiosk_token),
+):
     session = db.get(KioskSession, payload.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -134,6 +138,7 @@ def list_tickets(
     status: str | None = None,
     queue_scope: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin")),
 ):
     query = select(QueueTicket).order_by(QueueTicket.created_at.asc(), QueueTicket.id.asc())
     if status:
@@ -181,6 +186,7 @@ def update_ticket_status(
     ticket_id: int,
     payload: QueueTicketStatusPatchRequest,
     db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin")),
 ):
     ticket = db.get(QueueTicket, ticket_id)
     if not ticket:
@@ -229,7 +235,11 @@ def update_ticket_status(
 
 
 @router.post("/call-next")
-def call_next_ticket(payload: QueueCallNextRequest, db: Session = Depends(get_db)):
+def call_next_ticket(
+    payload: QueueCallNextRequest,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin")),
+):
     current_assignment = db.scalar(
         select(QueueExecutiveAssignment).where(
             and_(
@@ -337,6 +347,7 @@ def transfer_ticket(
     ticket_id: int,
     payload: QueueTransferRequest,
     db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("supervisor", "admin")),
 ):
     ticket = db.get(QueueTicket, ticket_id)
     if not ticket:
@@ -386,6 +397,7 @@ def transfer_ticket(
 def queue_metrics_summary(
     queue_scope: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin")),
 ):
     tickets = db.scalars(select(QueueTicket)).all()
     sessions = {
@@ -424,6 +436,7 @@ def queue_metrics_summary(
 def queue_metrics_by_executive(
     queue_scope: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("supervisor", "admin")),
 ):
     assignments = db.scalars(select(QueueExecutiveAssignment)).all()
     tickets = {t.id: t for t in db.scalars(select(QueueTicket)).all()}
@@ -480,6 +493,7 @@ def prioritize_ticket(
     ticket_id: int,
     payload: QueuePrioritizeRequest,
     db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("supervisor", "admin")),
 ):
     ticket = db.get(QueueTicket, ticket_id)
     if not ticket:
@@ -504,7 +518,11 @@ def prioritize_ticket(
 
 
 @router.post("/admin/reset")
-def reset_queue(payload: QueueAdminResetRequest, db: Session = Depends(get_db)):
+def reset_queue(
+    payload: QueueAdminResetRequest,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("admin")),
+):
     queue_scope = (payload.queue_scope or "").strip()
 
     tickets = db.scalars(select(QueueTicket)).all()
