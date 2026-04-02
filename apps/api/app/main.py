@@ -53,6 +53,16 @@ def dashboard_page():
     return FileResponse(static_dir / "dashboard" / "index.html")
 
 
+@app.get("/", include_in_schema=False)
+def tools_home_page():
+    return FileResponse(static_dir / "tools" / "index.html")
+
+
+@app.get("/tools", include_in_schema=False)
+def tools_page():
+    return FileResponse(static_dir / "tools" / "index.html")
+
+
 @app.get("/executive-dashboard", include_in_schema=False)
 def executive_dashboard_page():
     return FileResponse(static_dir / "executive" / "index.html")

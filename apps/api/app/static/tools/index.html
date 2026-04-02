@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urbani - Accesos</title>
+  <style>
+    :root{
+      --bg:#0d1320;
+      --bg2:#141d30;
+      --card:#111a2a;
+      --line:#263651;
+      --ink:#e7eefc;
+      --muted:#9fb2d3;
+      --brand:#69cc25;
+      --accent:#3a9ee8;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      background: radial-gradient(circle at 10% 10%, #1d2f53 0%, var(--bg) 42%, #090e16 100%);
+      color:var(--ink);
+      font-family: "Segoe UI", sans-serif;
+      padding:24px;
+    }
+    .wrap{max-width:980px;margin:0 auto;display:grid;gap:14px}
+    .card{
+      background:linear-gradient(180deg,var(--card),var(--bg2));
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:16px;
+    }
+    h1{margin:0;font-size:30px}
+    .muted{color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .tool{display:grid;gap:10px}
+    .tool h3{margin:0}
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-height:48px;padding:0 16px;border-radius:10px;border:none;cursor:pointer;
+      text-decoration:none;font-weight:700
+    }
+    .btn.primary{background:var(--brand);color:#0b1a07}
+    .btn.secondary{background:var(--accent);color:#081523}
+    .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <h1>Portal de Herramientas Urbani</h1>
+      <div class="muted">Accesos rápidos a kiosko, dashboards y utilidades operativas.</div>
+    </section>
+
+    <section class="grid">
+      <article class="card tool">
+        <h3>Kiosko (Vite)</h3>
+        <div class="muted">Flujo de cliente para tomar número y perfilado.</div>
+        <a class="btn primary" href="http://127.0.0.1:5173/" target="_blank" rel="noreferrer">Abrir Kiosko</a>
+      </article>
+
+      <article class="card tool">
+        <h3>Dashboard Ejecutivo</h3>
+        <div class="muted">Llamar siguiente, iniciar/finalizar, transferencia y no-show.</div>
+        <a class="btn secondary" href="/executive-dashboard">Abrir Ejecutivo</a>
+      </article>
+
+      <article class="card tool">
+        <h3>Dashboard Supervisor</h3>
+        <div class="muted">Métricas globales, prioridad, transferencias y reset de cola.</div>
+        <a class="btn secondary" href="/supervisor-dashboard">Abrir Supervisor</a>
+      </article>
+
+      <article class="card tool">
+        <h3>API / Documentación</h3>
+        <div class="muted">Explora endpoints y prueba operaciones en Swagger.</div>
+        <a class="btn ghost" href="/docs" target="_blank" rel="noreferrer">Abrir API Docs</a>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
