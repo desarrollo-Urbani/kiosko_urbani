@@ -23,10 +23,24 @@
     input,select{height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
     .mono{font-family:Consolas, "Courier New", monospace}
+    .btn.ok{background:#eaf8ee;border-color:#cbe9d4;color:#1e6f3b}
     @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
   </style>
 </head>
 <body>
+  <section id="loginCard" style="display:none;max-width:520px;margin:80px auto">
+    <div class="card">
+      <div style="font-size:26px;font-weight:800">Ingreso Supervisor</div>
+      <div style="color:var(--muted);font-size:13px;margin-top:6px">Accede con tu correo autorizado (rol supervisor o admin)</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <input id="loginEmail" type="email" placeholder="correo@empresa.cl" style="flex:1;min-height:48px" />
+        <button id="loginBtn" class="btn ok" style="min-height:48px;min-width:130px">Ingresar</button>
+      </div>
+      <div id="loginError" style="margin-top:10px;font-size:13px;color:var(--warn)"></div>
+    </div>
+  </section>
+
+  <div id="appShell" style="display:none">
   <main class="wrap">
     <section class="card row" style="justify-content:space-between">
       <div>
@@ -101,6 +115,7 @@
       </table>
     </section>
   </main>
+  </div>
 
   <script>
     const API = "/api/v1";
@@ -120,6 +135,17 @@
       renta_tramo: "Renta",
     };
 
+    function showLogin(msg) {
+      document.getElementById("loginCard").style.display = "block";
+      document.getElementById("appShell").style.display = "none";
+      document.getElementById("loginError").textContent = msg || "";
+    }
+
+    function showApp() {
+      document.getElementById("loginCard").style.display = "none";
+      document.getElementById("appShell").style.display = "block";
+    }
+
     function loadAuthState() {
       try {
         authState = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "null");
@@ -127,9 +153,46 @@
         authState = null;
       }
     }
+    function saveAuthState(state) {
+      authState = state;
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state));
+    }
     function clearAuthState() {
       authState = null;
       localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+
+    async function login() {
+      const email = (document.getElementById("loginEmail").value || "").trim().toLowerCase();
+      if (!email) {
+        document.getElementById("loginError").textContent = "Ingresa tu correo";
+        return;
+      }
+      document.getElementById("loginError").textContent = "";
+      let result;
+      try {
+        result = await req("/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email }),
+        });
+      } catch (err) {
+        document.getElementById("loginError").textContent = err.message || "No se pudo ingresar";
+        return;
+      }
+      saveAuthState(result);
+      const me = await req("/auth/me");
+      if (!(me.role === "supervisor" || me.role === "admin")) {
+        clearAuthState();
+        document.getElementById("loginError").textContent = "Tu usuario no tiene rol supervisor o admin";
+        return;
+      }
+      showApp();
+      await refresh();
+    }
+
+    function logout() {
+      clearAuthState();
+      showLogin();
     }
 
     function orderedProfileEntries(profile) {
@@ -359,7 +422,15 @@
 
     document.getElementById("refreshBtn").onclick = () => refresh().catch((e) => alert(e.message));
     document.getElementById("resetBtn").onclick = () => resetQueue().catch((e) => alert(e.message));
-    document.getElementById("logoutBtn").onclick = () => { clearAuthState(); window.location.href = "/executive-dashboard"; };
+    document.getElementById("logoutBtn").onclick = () => logout();
+    document.getElementById("loginBtn").onclick = () => login().catch((e) => {
+      document.getElementById("loginError").textContent = e.message || "No se pudo ingresar";
+    });
+    document.getElementById("loginEmail").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") login().catch((err) => {
+        document.getElementById("loginError").textContent = err.message || "No se pudo ingresar";
+      });
+    });
     document.getElementById("queueScope").onchange = () => refresh().catch((e) => alert(e.message));
     document.getElementById("rutSearchBtn").onclick = () => searchByRut().catch((e) => alert(e.message));
     document.getElementById("rutSearch").addEventListener("keydown", (e) => {
@@ -378,19 +449,21 @@
     async function bootstrap() {
       loadAuthState();
       if (!authState?.access_token) {
-        window.location.href = "/executive-dashboard";
+        showLogin();
         return;
       }
       try {
         const me = await req("/auth/me");
         if (!(me.role === "supervisor" || me.role === "admin")) {
-          window.location.href = "/executive-dashboard";
+          clearAuthState();
+          showLogin("Tu usuario no tiene rol supervisor o admin");
           return;
         }
+        showApp();
         await refresh();
       } catch {
         clearAuthState();
-        window.location.href = "/executive-dashboard";
+        showLogin();
       }
     }
 
