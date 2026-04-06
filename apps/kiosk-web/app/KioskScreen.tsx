@@ -6,7 +6,7 @@ const GREEN = '#5EB50D';
 const BLUE  = '#3333B8';
 const BG    = '#0d0d0d';
 
-const API_BASE = '/api/v1';
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '/api/v1').replace(/\/$/, '');
 const KIOSK_TOKEN = 'dev-kiosk-token';
 const KIOSK_ID = 'kiosk-1';
 const QUEUE_SCOPE = 'kiosk-';
