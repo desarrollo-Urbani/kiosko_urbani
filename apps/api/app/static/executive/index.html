@@ -138,6 +138,7 @@
     const PRIORITY_MODE = "smart";
     let waitingRowsCache = [];
     let localInServiceStartedAt = null;
+    const localStartByTicket = {};
     const PROFILE_ORDER = ["objetivo", "tipo", "region", "comuna", "presupuesto", "renta_tramo"];
     const PROFILE_LABELS = {
       objetivo: "Objetivo",
@@ -243,7 +244,11 @@
       const nowMs = Date.now();
       waitingRowsCache.forEach((item) => {
         const start = parseApiDate(item.created_at);
-        const seconds = start ? Math.max(0, Math.floor((nowMs - start.getTime()) / 1000)) : 0;
+        if (!localStartByTicket[item.id]) {
+          localStartByTicket[item.id] = start ? start.getTime() : nowMs;
+        }
+        const base = start ? start.getTime() : localStartByTicket[item.id];
+        const seconds = Math.max(0, Math.floor((nowMs - base) / 1000));
         const tr = document.createElement("tr");
         const detail = item.profiled ? profileSummary(item.profile) : "Sin perfilado";
         tr.innerHTML = `
@@ -373,7 +378,10 @@
           const prefix = isInService ? "Atención " : "Espera ";
           document.getElementById("currentTimer").textContent = `${prefix}${formatElapsed(elapsed)}`;
         } else {
-          document.getElementById("currentTimer").textContent = "00:00";
+          if (!localStartByTicket[current.id]) localStartByTicket[current.id] = Date.now();
+          const elapsed = Math.floor((Date.now() - localStartByTicket[current.id]) / 1000);
+          const prefix = isInService ? "Atención " : "Espera ";
+          document.getElementById("currentTimer").textContent = `${prefix}${formatElapsed(elapsed)}`;
         }
       }
       waitingRowsCache = waiting.items || [];
