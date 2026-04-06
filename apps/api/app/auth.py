@@ -18,6 +18,8 @@ def _csv_to_set(raw: str) -> set[str]:
     return {item.strip().lower() for item in raw.split(",") if item.strip()}
 
 
+DEFAULT_SUPERVISOR_EMAILS = {"desarrollo@urbani.cl"}
+
 DEFAULT_ALLOWED_EMAILS = {
     "notificaciones@mobysuite.com",
     "eflores@urbani.cl",
@@ -178,7 +180,8 @@ def _resolve_role(email: str) -> str:
     email_l = email.lower()
     if email_l in _csv_to_set(settings.admin_emails):
         return "admin"
-    if email_l in _csv_to_set(settings.supervisor_emails):
+    supervisor_set = _csv_to_set(settings.supervisor_emails) or DEFAULT_SUPERVISOR_EMAILS
+    if email_l in supervisor_set:
         return "supervisor"
     return "executive"
 
