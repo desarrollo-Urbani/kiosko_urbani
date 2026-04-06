@@ -9,6 +9,7 @@ const BG    = '#0d0d0d';
 const API_BASE = '/api/v1';
 const KIOSK_TOKEN = 'dev-kiosk-token';
 const KIOSK_ID = 'kiosk-1';
+const QUEUE_SCOPE = 'kiosk-';
 
 async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -37,7 +38,47 @@ async function apiGet<T>(path: string): Promise<T> {
 
 type Screen = 'home' | 'rut' | 'questions' | 'done';
 
-const QUESTIONS = [
+type QuestionOption = { label: string; value: string };
+type QuestionDef = { key: string; text: string; options: QuestionOption[] };
+
+const REGION_OPTIONS: QuestionOption[] = [
+  { label: 'Bío-Bío', value: 'biobio' },
+  { label: 'Ñuble', value: 'nuble' },
+  { label: 'Metropolitana', value: 'metropolitana' },
+  { label: 'Los Lagos', value: 'los_lagos' },
+  { label: 'Araucanía', value: 'araucania' },
+];
+
+const COMUNAS_BY_REGION: Record<string, QuestionOption[]> = {
+  biobio: [
+    { label: 'Los Ángeles', value: 'los_angeles' },
+    { label: 'Concepción', value: 'concepcion' },
+    { label: 'Penco', value: 'penco' },
+    { label: 'San Pedro de la Paz', value: 'san_pedro_de_la_paz' },
+    { label: 'Chiguayante', value: 'chiguayante' },
+  ],
+  nuble: [
+    { label: 'Chillán', value: 'chillan' },
+  ],
+  metropolitana: [
+    { label: 'Santiago', value: 'santiago' },
+    { label: 'Quinta Normal', value: 'quinta_normal' },
+  ],
+  los_lagos: [
+    { label: 'Puerto Montt', value: 'puerto_montt' },
+  ],
+  araucania: [
+    { label: 'Pucón', value: 'pucon' },
+  ],
+};
+
+function buildQuestions(selectedAnswers: Record<string, string>): QuestionDef[] {
+  const selectedRegion = selectedAnswers.region;
+  const comunaOptions = selectedRegion
+    ? (COMUNAS_BY_REGION[selectedRegion] || [])
+    : Object.values(COMUNAS_BY_REGION).flat();
+
+  return [
   {
     key: 'objetivo',
     text: '¿Buscas para vivir o invertir?',
@@ -52,29 +93,39 @@ const QUESTIONS = [
     options: [
       { label: 'Departamento', value: 'dept' },
       { label: 'Casa',        value: 'casa' },
-      { label: 'Oficina',     value: 'oficina' },
     ],
   },
   {
-    key: 'zona',
-    text: '¿En qué comuna o sector buscas?',
-    options: [
-      { label: 'Vitacura', value: 'vitacura' },
-      { label: 'Providencia', value: 'providencia' },
-      { label: 'Las Condes', value: 'lascondes' },
-      { label: 'Ñuñoa',   value: 'nunoa' },
-    ],
+    key: 'region',
+    text: '¿En qué región te interesa buscar?',
+    options: REGION_OPTIONS,
+  },
+  {
+    key: 'comuna',
+    text: '¿En qué comuna buscas?',
+    options: comunaOptions,
   },
   {
     key: 'presupuesto',
     text: '¿Cuál es tu presupuesto estimado?',
     options: [
-      { label: 'Hasta 3.000 UF',  value: '3000' },
-      { label: 'Hasta 6.000 UF',  value: '6000' },
-      { label: 'Más de 6.000 UF', value: '6001' },
+      { label: 'Hasta 2.000 UF', value: 'hasta_2000' },
+      { label: '2.001 a 2.600 UF', value: '2001_2600' },
+      { label: '2.601 a 3.325 UF', value: '2601_3325' },
+      { label: 'Más de 3.325 UF', value: 'mas_3325' },
     ],
   },
-];
+  {
+    key: 'renta_tramo',
+    text: '¿Cuál es tu tramo de renta mensual líquida?',
+    options: [
+      { label: 'Menor a $1.200.000', value: 'menos_1200000' },
+      { label: 'Entre $1.200.000 y $1.800.000', value: '1200000_1800000' },
+      { label: 'Más de $1.800.000', value: 'mas_1800000' },
+    ],
+  },
+  ];
+}
 
 // --- Teclado numérico táctil ---
 function NumericKeyboard({
@@ -185,6 +236,7 @@ export default function KioskScreen() {
     : rutRaw;
   const [step, setStep]          = useState(0);
   const [answers, setAnswers]    = useState<Record<string, string>>({});
+  const questions = buildQuestions(answers);
   const [folio, setFolio]        = useState('');
   const [eta, setEta]            = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -227,7 +279,7 @@ export default function KioskScreen() {
           in_service: string | null;
           waiting_count: number;
           eta_minutes: number;
-        }>('/queue/display');
+        }>(`/queue/display?queue_scope=${encodeURIComponent(QUEUE_SCOPE)}`);
         if (active) setQueueDisplay(data);
       } catch { /* silencioso */ }
     };
@@ -302,7 +354,7 @@ export default function KioskScreen() {
   }
 
   async function handleAnswer(value: string) {
-    const q = QUESTIONS[step];
+    const q = questions[step];
     const label = q.options.find((o) => o.value === value)?.label ?? value;
     const newAnswers = { ...answers, [q.key]: value };
     setAnswers(newAnswers);
@@ -317,8 +369,9 @@ export default function KioskScreen() {
       } catch { /* continuar aunque falle */ }
     }
 
-    if (step < QUESTIONS.length - 1) {
-      setAvatarMessage(QUESTIONS[step + 1].text);
+    if (step < questions.length - 1) {
+      const nextQuestions = buildQuestions(newAnswers);
+      setAvatarMessage(nextQuestions[step + 1].text);
       setStep(step + 1);
     } else {
       // Crear ticket en la cola
@@ -517,7 +570,7 @@ export default function KioskScreen() {
               <div style={cardStyle}>
                 {/* Progress */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 28 }}>
-                  {QUESTIONS.map((_, i) => (
+                  {questions.map((_, i) => (
                     <div key={i} style={{
                       flex: 1, height: 4, borderRadius: 2,
                       background: i <= step ? GREEN : 'rgba(255,255,255,0.12)',
@@ -526,13 +579,13 @@ export default function KioskScreen() {
                   ))}
                 </div>
                 <div style={{ fontSize: 13, color: '#888', letterSpacing: '0.18em', marginBottom: 12 }}>
-                  PREGUNTA {step + 1} DE {QUESTIONS.length}
+                  PREGUNTA {step + 1} DE {questions.length}
                 </div>
                 <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 30 }}>
-                  {QUESTIONS[step].text}
+                  {questions[step].text}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {QUESTIONS[step].options.map((opt) => (
+                  {questions[step].options.map((opt) => (
                     <Btn key={opt.value} variant="outline" onClick={() => handleAnswer(opt.value)}>
                       {opt.label}
                     </Btn>

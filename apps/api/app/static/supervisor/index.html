@@ -22,6 +22,7 @@
     .btn.warn{background:#ffeef1;border-color:#f1c4cd;color:var(--warn)}
     input,select{height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+    .mono{font-family:Consolas, "Courier New", monospace}
     @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
   </style>
 </head>
@@ -57,10 +58,24 @@
     </section>
 
     <section class="card">
+      <h3 style="margin:0 0 10px">Busqueda por RUT (quien atendio)</h3>
+      <div class="row" style="margin-bottom:10px">
+        <input id="rutSearch" placeholder="11111111-1" />
+        <button class="btn primary" id="rutSearchBtn">Buscar</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Turno</th><th>RUT</th><th>Estado</th><th>Ejecutivo</th><th>Inicio</th><th>Fin</th><th>Observaciones</th></tr>
+        </thead>
+        <tbody id="rutHistoryBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
       <h3 style="margin:0 0 10px">Turnos activos (transferir)</h3>
       <table>
         <thead>
-          <tr><th>Turno</th><th>Estado</th><th>Ejecutivo actual</th><th>Transferir a</th><th>Accion</th></tr>
+          <tr><th>Turno</th><th>Estado</th><th>Tiempo</th><th>Ejecutivo actual</th><th>Observaciones</th><th>Transferir a</th><th>Accion</th></tr>
         </thead>
         <tbody id="activeBody"></tbody>
       </table>
@@ -70,7 +85,7 @@
       <h3 style="margin:0 0 10px">Cola de espera (priorizar)</h3>
       <table>
         <thead>
-          <tr><th>Turno</th><th>Espera (min)</th><th>Perfilado</th><th>Accion</th></tr>
+          <tr><th>Turno</th><th>Espera</th><th>Perfilado</th><th>Observaciones</th><th>Accion</th></tr>
         </thead>
         <tbody id="waitingBody"></tbody>
       </table>
@@ -91,6 +106,18 @@
     const API = "/api/v1";
     const AUTH_STORAGE_KEY = "urbani_exec_auth";
     let authState = null;
+    let waitingRowsCache = [];
+    let activeRowsCache = [];
+    let onlineExecutives = [];
+    const PROFILE_ORDER = ["objetivo", "tipo", "region", "comuna", "presupuesto", "renta_tramo"];
+    const PROFILE_LABELS = {
+      objetivo: "Objetivo",
+      tipo: "Tipo",
+      region: "Región",
+      comuna: "Comuna",
+      presupuesto: "Presupuesto",
+      renta_tramo: "Renta",
+    };
 
     function loadAuthState() {
       try {
@@ -102,6 +129,112 @@
     function clearAuthState() {
       authState = null;
       localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+
+    function orderedProfileEntries(profile) {
+      const data = profile || {};
+      const keys = Object.keys(data);
+      const orderedKeys = PROFILE_ORDER.filter((k) => Object.prototype.hasOwnProperty.call(data, k));
+      const extraKeys = keys.filter((k) => !PROFILE_ORDER.includes(k)).sort();
+      return [...orderedKeys, ...extraKeys].map((k) => [k, data[k]]);
+    }
+
+    function profileSummary(profile) {
+      const entries = orderedProfileEntries(profile);
+      if (entries.length === 0) return "Sin perfilado";
+      return entries
+        .map(([k, v]) => `${PROFILE_LABELS[k] || k}: ${String(v)}`)
+        .join(" | ");
+    }
+
+    function formatElapsed(totalSeconds) {
+      const sec = Math.max(0, totalSeconds | 0);
+      const min = Math.floor(sec / 60);
+      const rem = sec % 60;
+      return `${String(min).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
+    }
+
+    function parseApiDate(value){
+      if(!value) return null;
+      const normalized = String(value).replace(/(\.\d{3})\d+$/, "$1");
+      const hasTimezone = /[zZ]|[+\-]\d{2}:\d{2}$/.test(normalized);
+      const asUtc = hasTimezone ? normalized : `${normalized}Z`;
+      let d = new Date(asUtc);
+      if (!isNaN(d.getTime())) return d;
+      d = new Date(normalized);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function fmtDate(value){
+      if(!value) return "-";
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? "-" : d.toLocaleString();
+    }
+
+    function renderWaitingRows() {
+      const waitingBody = document.getElementById("waitingBody");
+      waitingBody.innerHTML = "";
+      const nowMs = Date.now();
+      waitingRowsCache.forEach((row) => {
+        const created = parseApiDate(row.created_at);
+        const waitSeconds = created ? Math.max(0, Math.floor((nowMs - created.getTime()) / 1000)) : 0;
+        const detail = row.profiled ? profileSummary(row.profile) : "Sin perfilado";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.ticket_number}</td>
+          <td class="mono">${formatElapsed(waitSeconds)}</td>
+          <td>${detail}</td>
+          <td>${row.observation || "-"}</td>
+          <td><button class="btn" data-prio="${row.id}">Priorizar</button></td>
+        `;
+        waitingBody.appendChild(tr);
+      });
+    }
+
+    function renderActiveRows() {
+      const activeBody = document.getElementById("activeBody");
+      activeBody.innerHTML = "";
+      const now = Date.now();
+      activeRowsCache.forEach((row) => {
+        let startTs = null;
+        if (row.status === "in_service" && row.assignment_started_at) {
+          const started = parseApiDate(row.assignment_started_at);
+          startTs = started ? started.getTime() : null;
+        } else if (row.status === "called" && row.assignment_created_at) {
+          const called = parseApiDate(row.assignment_created_at);
+          startTs = called ? called.getTime() : null;
+        }
+        if (!startTs) {
+          const created = parseApiDate(row.created_at);
+          startTs = created ? created.getTime() : null;
+        }
+        const seconds = startTs ? Math.max(0, Math.floor((now - startTs) / 1000)) : 0;
+        const candidates = onlineExecutives.filter((u) => u.email !== row.executive_id);
+        const optionsHtml = candidates.length
+          ? candidates
+              .map((u) => {
+                const role = u.role ? ` (${u.role})` : "";
+                return `<option value="${u.email}">${(u.name || u.email)}${role}</option>`;
+              })
+              .join("")
+          : '<option value="">Sin ejecutivos conectados</option>';
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.ticket_number}</td>
+          <td>${row.status}</td>
+          <td class="mono">${formatElapsed(seconds)}</td>
+          <td>${row.executive_id || "-"}</td>
+          <td>${row.observation || "-"}</td>
+          <td><select data-transfer="${row.id}" style="min-width:220px">${optionsHtml}</select></td>
+          <td><button class="btn" data-transfer-btn="${row.id}" data-from="${row.executive_id || ""}">Transferir</button></td>
+        `;
+        activeBody.appendChild(tr);
+      });
+    }
+
+    async function refreshOnlineExecutives(){
+      const res = await req("/queue/online-executives");
+      onlineExecutives = res.items || [];
     }
 
     async function req(path, options = {}){
@@ -128,6 +261,7 @@
       const waiting = await req(`/queue/tickets?status=waiting&queue_scope=${scope}`);
       const called = await req(`/queue/tickets?status=called&queue_scope=${scope}`);
       const inService = await req(`/queue/tickets?status=in_service&queue_scope=${scope}`);
+      await refreshOnlineExecutives();
 
       document.getElementById("kpiWaiting").textContent = summary.waiting_count;
       document.getElementById("kpiCompleted").textContent = summary.completed_count;
@@ -137,34 +271,10 @@
       document.getElementById("kpiServiceAvg").textContent = summary.avg_service_minutes;
       document.getElementById("kpiScope").textContent = summary.queue_scope;
 
-      const activeBody = document.getElementById("activeBody");
-      activeBody.innerHTML = "";
-      [...inService.items, ...called.items].forEach((row) => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${row.ticket_number}</td>
-          <td>${row.status}</td>
-          <td>${row.executive_id || "-"}</td>
-          <td><input data-transfer="${row.id}" value="" placeholder="exec-2" /></td>
-          <td><button class="btn" data-transfer-btn="${row.id}" data-from="${row.executive_id || ""}">Transferir</button></td>
-        `;
-        activeBody.appendChild(tr);
-      });
-
-      const waitingBody = document.getElementById("waitingBody");
-      waitingBody.innerHTML = "";
-      const now = new Date();
-      waiting.items.forEach((row) => {
-        const waitMin = Math.max(0, Math.floor((now - new Date(row.created_at)) / 60000));
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${row.ticket_number}</td>
-          <td>${waitMin}</td>
-          <td>${row.profiled ? "Si" : "No"}</td>
-          <td><button class="btn" data-prio="${row.id}">Priorizar</button></td>
-        `;
-        waitingBody.appendChild(tr);
-      });
+      activeRowsCache = [...inService.items, ...called.items];
+      waitingRowsCache = waiting.items || [];
+      renderActiveRows();
+      renderWaitingRows();
 
       const execBody = document.getElementById("execBody");
       execBody.innerHTML = "";
@@ -180,6 +290,31 @@
         `;
         execBody.appendChild(tr);
       });
+    }
+
+    async function searchByRut(){
+      const rut = (document.getElementById("rutSearch").value || "").trim();
+      if(!rut){ alert("Ingresa un RUT"); return; }
+      const scope = encodeURIComponent(scopeValue());
+      const res = await req(`/queue/history/by-rut?rut=${encodeURIComponent(rut)}&queue_scope=${scope}`);
+      const body = document.getElementById("rutHistoryBody");
+      body.innerHTML = "";
+      (res.items || []).forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.ticket_number}</td>
+          <td>${row.rut || "-"}</td>
+          <td>${row.status}</td>
+          <td>${row.executive_id || "-"}</td>
+          <td>${fmtDate(row.started_at || row.called_at)}</td>
+          <td>${fmtDate(row.ended_at)}</td>
+          <td>${row.observation || "-"}</td>
+        `;
+        body.appendChild(tr);
+      });
+      if ((res.items || []).length === 0) {
+        body.innerHTML = '<tr><td colspan="7">Sin resultados para ese RUT.</td></tr>';
+      }
     }
 
     async function prioritize(ticketId){
@@ -217,6 +352,10 @@
     document.getElementById("resetBtn").onclick = () => resetQueue().catch((e) => alert(e.message));
     document.getElementById("logoutBtn").onclick = () => { clearAuthState(); window.location.href = "/executive-dashboard"; };
     document.getElementById("queueScope").onchange = () => refresh().catch((e) => alert(e.message));
+    document.getElementById("rutSearchBtn").onclick = () => searchByRut().catch((e) => alert(e.message));
+    document.getElementById("rutSearch").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") searchByRut().catch((err) => alert(err.message));
+    });
     document.body.addEventListener("click", (e) => {
       const target = e.target;
       if (target.matches("[data-prio]")) {
@@ -250,6 +389,11 @@
     setInterval(() => {
       if (authState?.access_token) refresh().catch(() => null);
     }, 5000);
+    setInterval(() => {
+      if (!authState?.access_token) return;
+      renderWaitingRows();
+      renderActiveRows();
+    }, 1000);
   </script>
 </body>
 </html>

@@ -5,14 +5,15 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth import AuthPrincipal, require_roles, verify_kiosk_token
+from ..auth import AuthPrincipal, get_user_name_by_email, require_roles, verify_kiosk_token
 from ..config import settings
 from ..database import get_db
-from ..models import EventLog, KioskSession, QueueExecutiveAssignment, QueueTicket, SessionAnswer
+from ..models import AppUser, AppUserSession, EventLog, KioskSession, QueueExecutiveAssignment, QueueTicket, SessionAnswer
 from ..schemas import (
     QueueAdminResetRequest,
     QueueCallNextRequest,
     QueuePrioritizeRequest,
+    QueueTicketObservationRequest,
     QueueTicketStatusPatchRequest,
     QueueTransferRequest,
     TicketCreateRequest,
@@ -27,6 +28,47 @@ def _scope_matches(scope: str | None, kiosk_device_id: str | None) -> bool:
     if not scope:
         return True
     return (kiosk_device_id or "").strip().lower().startswith(scope.strip().lower())
+
+
+def _normalize_rut(value: str | None) -> str:
+    if not value:
+        return ""
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+@router.get("/online-executives")
+def list_online_executives(
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin")),
+):
+    sessions = db.scalars(
+        select(AppUserSession).where(AppUserSession.expires_at > datetime.utcnow())
+    ).all()
+    if not sessions:
+        return {"items": []}
+    user_ids = sorted({s.user_id for s in sessions})
+    users = db.scalars(
+        select(AppUser).where(
+            and_(
+                AppUser.id.in_(user_ids),
+                AppUser.is_active.is_(True),
+                AppUser.role.in_(["executive", "supervisor", "admin"]),
+            )
+        )
+    ).all()
+    items = sorted(
+        [
+            {
+                "user_id": u.id,
+                "email": u.email,
+                "role": u.role,
+                "name": get_user_name_by_email(u.email),
+            }
+            for u in users
+        ],
+        key=lambda x: (x["name"] or "", x["email"]),
+    )
+    return {"items": items}
 
 
 def _priority_score(db: Session, ticket: QueueTicket) -> int:
@@ -53,13 +95,14 @@ def _extract_ticket_customer_context(answer_rows: list[SessionAnswer]) -> tuple[
     profile: dict[str, object] = {}
     for row in answer_rows:
         value = row.answer_value.get("value") if isinstance(row.answer_value, dict) else row.answer_value
+        display_value = row.answer_label if row.answer_label else value
         key = row.question_key.lower()
         if key in {"rut", "rut_cliente", "customer_rut", "document_rut"} and isinstance(value, str):
             candidate = value.strip()
             if candidate and candidate.lower() not in {"skip", "no", "none", "n/a", "na"}:
                 rut = candidate
         else:
-            profile[row.question_key] = value
+            profile[row.question_key] = display_value
     profiled = len(profile) > 0
     return rut, profile, profiled
 
@@ -150,18 +193,40 @@ def list_tickets(
             for s in db.scalars(select(KioskSession).where(KioskSession.id.in_([t.session_id for t in tickets]))).all()
         }
         tickets = [t for t in tickets if _scope_matches(queue_scope, session_map.get(t.session_id))]
-    assignment_by_ticket: dict[int, str] = {}
+    assignment_by_ticket: dict[int, QueueExecutiveAssignment] = {}
     if tickets:
         ticket_ids = [t.id for t in tickets]
         assignments = db.scalars(
             select(QueueExecutiveAssignment).where(QueueExecutiveAssignment.ticket_id.in_(ticket_ids))
         ).all()
-        assignment_by_ticket = {a.ticket_id: a.executive_id for a in assignments}
+        assignment_by_ticket = {a.ticket_id: a for a in assignments}
     session_ids = list({t.session_id for t in tickets})
     answers_by_session: dict[str, list[SessionAnswer]] = {sid: [] for sid in session_ids}
     if session_ids:
-        for row in db.scalars(select(SessionAnswer).where(SessionAnswer.session_id.in_(session_ids))).all():
+        for row in db.scalars(
+            select(SessionAnswer)
+            .where(SessionAnswer.session_id.in_(session_ids))
+            .order_by(SessionAnswer.created_at.asc(), SessionAnswer.id.asc())
+        ).all():
             answers_by_session[row.session_id].append(row)
+    observation_by_ticket: dict[int, str] = {}
+    if session_ids:
+        events = db.scalars(
+            select(EventLog)
+            .where(
+                and_(
+                    EventLog.session_id.in_(session_ids),
+                    EventLog.event_type == "queue_ticket_observation_upsert",
+                )
+            )
+            .order_by(EventLog.created_at.asc(), EventLog.id.asc())
+        ).all()
+        for ev in events:
+            payload = ev.payload or {}
+            ticket_id = payload.get("ticket_id")
+            observation = payload.get("observation")
+            if isinstance(ticket_id, int) and isinstance(observation, str):
+                observation_by_ticket[ticket_id] = observation
     return {
         "items": [
             (lambda rut, profile, profiled: {
@@ -169,7 +234,11 @@ def list_tickets(
                 "ticket_number": t.ticket_number,
                 "session_id": t.session_id,
                 "status": t.status,
-                "executive_id": assignment_by_ticket.get(t.id),
+                "executive_id": assignment_by_ticket.get(t.id).executive_id if assignment_by_ticket.get(t.id) else None,
+                "assignment_created_at": assignment_by_ticket.get(t.id).created_at if assignment_by_ticket.get(t.id) else None,
+                "assignment_started_at": assignment_by_ticket.get(t.id).started_at if assignment_by_ticket.get(t.id) else None,
+                "assignment_ended_at": assignment_by_ticket.get(t.id).ended_at if assignment_by_ticket.get(t.id) else None,
+                "observation": observation_by_ticket.get(t.id),
                 "rut": rut,
                 "profiled": profiled,
                 "profile": profile,
@@ -195,7 +264,12 @@ def update_ticket_status(
     assignment = db.scalar(
         select(QueueExecutiveAssignment).where(QueueExecutiveAssignment.ticket_id == ticket_id)
     )
-    if payload.executive_id and assignment and assignment.executive_id != payload.executive_id:
+    if (
+        payload.executive_id
+        and assignment
+        and assignment.executive_id != payload.executive_id
+        and principal.role == "executive"
+    ):
         raise HTTPException(status_code=409, detail="Ticket is assigned to another executive")
 
     old_status = ticket.status
@@ -232,6 +306,87 @@ def update_ticket_status(
     )
     db.commit()
     return {"ok": True, "ticket_id": ticket.id, "status": ticket.status}
+
+
+@router.post("/tickets/{ticket_id}/start")
+def start_ticket_service(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin", allow_kiosk=False)),
+):
+    ticket = db.get(QueueTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.status in {"completed", "no_show"}:
+        raise HTTPException(status_code=409, detail="Ticket already closed")
+
+    assignment = db.scalar(
+        select(QueueExecutiveAssignment).where(QueueExecutiveAssignment.ticket_id == ticket_id)
+    )
+    if not assignment:
+        assignment = QueueExecutiveAssignment(
+            ticket_id=ticket.id,
+            executive_id=principal.email or "exec-unknown",
+            status="in_service",
+            started_at=datetime.utcnow(),
+        )
+        db.add(assignment)
+    else:
+        if assignment.status != "in_service":
+            assignment.status = "in_service"
+        if not assignment.started_at:
+            assignment.started_at = datetime.utcnow()
+
+    old_status = ticket.status
+    ticket.status = "in_service"
+    session = db.get(KioskSession, ticket.session_id)
+    if session:
+        session.status = "active"
+        session.last_activity_at = datetime.utcnow()
+
+    db.add(
+        EventLog(
+            session_id=ticket.session_id,
+            event_type="queue_ticket_status_changed",
+            payload={
+                "ticket_id": ticket.id,
+                "ticket_number": ticket.ticket_number,
+                "from": old_status,
+                "to": "in_service",
+                "executive_id": assignment.executive_id,
+                "source": "start_endpoint",
+            },
+        )
+    )
+    db.commit()
+    return {"ok": True, "ticket_id": ticket.id, "status": ticket.status}
+
+
+@router.post("/tickets/{ticket_id}/observations")
+def upsert_ticket_observation(
+    ticket_id: int,
+    payload: QueueTicketObservationRequest,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin")),
+):
+    ticket = db.get(QueueTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    observation = (payload.observation or "").strip()
+    db.add(
+        EventLog(
+            session_id=ticket.session_id,
+            event_type="queue_ticket_observation_upsert",
+            payload={
+                "ticket_id": ticket.id,
+                "ticket_number": ticket.ticket_number,
+                "observation": observation,
+                "author_executive_id": principal.email,
+            },
+        )
+    )
+    db.commit()
+    return {"ok": True, "ticket_id": ticket.id, "observation": observation}
 
 
 @router.post("/call-next")
@@ -570,27 +725,120 @@ def reset_queue(
     }
 
 
+@router.get("/history/by-rut")
+def queue_history_by_rut(
+    rut: str,
+    queue_scope: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("supervisor", "admin")),
+):
+    target = _normalize_rut(rut)
+    if not target:
+        raise HTTPException(status_code=400, detail="rut is required")
+
+    rut_rows = db.scalars(
+        select(SessionAnswer)
+        .where(
+            SessionAnswer.question_key.in_(["rut", "rut_cliente", "customer_rut", "document_rut"])
+        )
+        .order_by(SessionAnswer.created_at.desc(), SessionAnswer.id.desc())
+    ).all()
+
+    session_rut: dict[str, str] = {}
+    matched_session_ids: set[str] = set()
+    for row in rut_rows:
+        value = row.answer_value.get("value") if isinstance(row.answer_value, dict) else row.answer_value
+        if isinstance(value, str):
+            normalized = _normalize_rut(value)
+            if normalized:
+                session_rut.setdefault(row.session_id, value)
+            if normalized == target:
+                matched_session_ids.add(row.session_id)
+
+    if not matched_session_ids:
+        return {"items": []}
+
+    tickets = db.scalars(
+        select(QueueTicket)
+        .where(QueueTicket.session_id.in_(list(matched_session_ids)))
+        .order_by(QueueTicket.created_at.desc(), QueueTicket.id.desc())
+    ).all()
+    if queue_scope:
+        sessions = {
+            s.id: s.kiosk_device_id
+            for s in db.scalars(select(KioskSession).where(KioskSession.id.in_([t.session_id for t in tickets]))).all()
+        }
+        tickets = [t for t in tickets if _scope_matches(queue_scope, sessions.get(t.session_id))]
+
+    if not tickets:
+        return {"items": []}
+
+    ticket_ids = [t.id for t in tickets]
+    assignments = db.scalars(
+        select(QueueExecutiveAssignment).where(QueueExecutiveAssignment.ticket_id.in_(ticket_ids))
+    ).all()
+    assignment_by_ticket = {a.ticket_id: a for a in assignments}
+
+    events = db.scalars(
+        select(EventLog)
+        .where(
+            and_(
+                EventLog.session_id.in_([t.session_id for t in tickets]),
+                EventLog.event_type == "queue_ticket_observation_upsert",
+            )
+        )
+        .order_by(EventLog.created_at.asc(), EventLog.id.asc())
+    ).all()
+    observation_by_ticket: dict[int, str] = {}
+    for ev in events:
+        payload = ev.payload or {}
+        ticket_id = payload.get("ticket_id")
+        observation = payload.get("observation")
+        if isinstance(ticket_id, int) and isinstance(observation, str):
+            observation_by_ticket[ticket_id] = observation
+
+    return {
+        "items": [
+            {
+                "ticket_id": t.id,
+                "ticket_number": t.ticket_number,
+                "session_id": t.session_id,
+                "rut": session_rut.get(t.session_id),
+                "status": t.status,
+                "executive_id": assignment_by_ticket.get(t.id).executive_id if assignment_by_ticket.get(t.id) else None,
+                "called_at": assignment_by_ticket.get(t.id).created_at if assignment_by_ticket.get(t.id) else None,
+                "started_at": assignment_by_ticket.get(t.id).started_at if assignment_by_ticket.get(t.id) else None,
+                "ended_at": assignment_by_ticket.get(t.id).ended_at if assignment_by_ticket.get(t.id) else None,
+                "observation": observation_by_ticket.get(t.id),
+                "created_at": t.created_at,
+            }
+            for t in tickets
+        ]
+    }
+
+
 @router.get("/display")
 def queue_display(
+    queue_scope: str | None = Query(default=None),
     db: Session = Depends(get_db),
     _kiosk_ok: None = Depends(verify_kiosk_token),
 ):
-    """Endpoint público para el kiosko: devuelve el ticket siendo llamado y el que está en atención."""
-    called = db.scalars(
+    """Endpoint público para el kiosko: devuelve ticket llamado, en atención y cantidad en espera."""
+    tickets = db.scalars(
         select(QueueTicket)
-        .where(QueueTicket.status == "called")
-        .order_by(QueueTicket.created_at.desc())
-    ).first()
+        .where(QueueTicket.status.in_(["called", "in_service", "waiting"]))
+        .order_by(QueueTicket.created_at.desc(), QueueTicket.id.desc())
+    ).all()
+    if queue_scope:
+        session_map = {
+            s.id: s.kiosk_device_id
+            for s in db.scalars(select(KioskSession).where(KioskSession.id.in_([t.session_id for t in tickets]))).all()
+        }
+        tickets = [t for t in tickets if _scope_matches(queue_scope, session_map.get(t.session_id))]
 
-    in_service = db.scalars(
-        select(QueueTicket)
-        .where(QueueTicket.status == "in_service")
-        .order_by(QueueTicket.created_at.desc())
-    ).first()
-
-    waiting_count = db.scalar(
-        select(func.count()).where(QueueTicket.status == "waiting")
-    ) or 0
+    called = next((t for t in tickets if t.status == "called"), None)
+    in_service = next((t for t in tickets if t.status == "in_service"), None)
+    waiting_count = len([t for t in tickets if t.status == "waiting"])
 
     return {
         "calling": called.ticket_number if called else None,

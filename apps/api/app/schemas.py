@@ -70,6 +70,10 @@ class QueueAdminResetRequest(BaseModel):
     queue_scope: str | None = None
 
 
+class QueueTicketObservationRequest(BaseModel):
+    observation: str
+
+
 class RecommendationRunRequest(BaseModel):
     session_id: str
 

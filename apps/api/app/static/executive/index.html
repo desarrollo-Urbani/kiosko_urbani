@@ -26,6 +26,12 @@
     .state.available{color:var(--ok)}
     .state.called{color:var(--brand)}
     .state.in_service{color:var(--warn)}
+    .timer-badge{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-width:140px;min-height:36px;padding:0 10px;
+      border-radius:999px;border:1px solid #cde2ed;
+      background:#eef7fc;color:#0f5f7a;font-weight:700;font-size:16px
+    }
     .primary{
       width:100%;min-height:72px;border:none;border-radius:14px;background:var(--brand);color:#fff;
       font-weight:800;font-size:28px;cursor:pointer
@@ -72,8 +78,11 @@
       <section class="card">
       <div id="currentEmpty" class="meta">Sin turno en atencion</div>
       <div id="currentPanel" style="display:none">
-        <div style="font-size:54px;font-weight:900;line-height:1" id="currentTicket">A-00</div>
-        <div class="meta" id="currentInfo">Cliente: N/D</div>
+        <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+          <div style="font-size:54px;font-weight:900;line-height:1" id="currentTicket">A-00</div>
+          <div class="timer-badge" id="currentTimer">00:00</div>
+        </div>
+        <div class="meta" id="currentInfo"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
           <span class="meta">RUT:</span>
           <code id="currentRut" style="background:#f2f6fa;border-radius:6px;padding:4px 8px">-</code>
@@ -85,8 +94,15 @@
         <div id="currentProfile" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
           <span class="meta">Transferir a:</span>
-          <input id="transferTo" value="exec-2" style="height:38px;padding:0 10px;border:1px solid var(--line);border-radius:8px"/>
+          <select id="transferTo" style="height:38px;padding:0 10px;border:1px solid var(--line);border-radius:8px;min-width:220px"></select>
           <button class="btn" id="transferBtn">Transferir turno</button>
+        </div>
+        <div style="margin-top:10px;display:grid;gap:8px">
+          <div class="meta">Observaciones</div>
+          <textarea id="observationInput" placeholder="Anota observaciones de la atención..." style="min-height:86px;padding:10px;border:1px solid var(--line);border-radius:10px;resize:vertical"></textarea>
+          <div>
+            <button class="btn" id="saveObservationBtn" style="min-height:38px">Guardar observación</button>
+          </div>
         </div>
         <div class="actions" style="margin-top:12px">
           <button class="btn ok" id="startBtn">Iniciar atencion</button>
@@ -115,10 +131,22 @@
   <script>
     const API = "/api/v1";
     let current = null;
+    let onlineExecutives = [];
     const AUTH_STORAGE_KEY = "urbani_exec_auth";
     let authState = null;
     const QUEUE_SCOPE = "kiosk-";
     const PRIORITY_MODE = "smart";
+    let waitingRowsCache = [];
+    let localInServiceStartedAt = null;
+    const PROFILE_ORDER = ["objetivo", "tipo", "region", "comuna", "presupuesto", "renta_tramo"];
+    const PROFILE_LABELS = {
+      objetivo: "Objetivo",
+      tipo: "Tipo",
+      region: "Región",
+      comuna: "Comuna",
+      presupuesto: "Presupuesto",
+      renta_tramo: "Renta",
+    };
 
     function getExecutiveId() {
       return authState?.user?.email || "exec-unknown";
@@ -164,6 +192,90 @@
     function clearAuthState() {
       authState = null;
       localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+
+    function orderedProfileEntries(profile) {
+      const data = profile || {};
+      const keys = Object.keys(data);
+      const orderedKeys = PROFILE_ORDER.filter((k) => Object.prototype.hasOwnProperty.call(data, k));
+      const extraKeys = keys.filter((k) => !PROFILE_ORDER.includes(k)).sort();
+      return [...orderedKeys, ...extraKeys].map((k) => [k, data[k]]);
+    }
+
+    function profileSummary(profile) {
+      const entries = orderedProfileEntries(profile);
+      if (entries.length === 0) return "Sin perfilado";
+      return entries
+        .map(([k, v]) => `${PROFILE_LABELS[k] || k}: ${String(v)}`)
+        .join(" | ");
+    }
+
+    function formatElapsed(totalSeconds) {
+      const sec = Math.max(0, totalSeconds | 0);
+      const min = Math.floor(sec / 60);
+      const rem = sec % 60;
+      return `${String(min).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
+    }
+
+    function parseApiDate(value) {
+      if (!value) return null;
+      const normalized = String(value).replace(/(\.\d{3})\d+$/, "$1");
+      const hasTimezone = /[zZ]|[+\-]\d{2}:\d{2}$/.test(normalized);
+      const asUtc = hasTimezone ? normalized : `${normalized}Z`;
+      let d = new Date(asUtc);
+      if (!isNaN(d.getTime())) return d;
+      d = new Date(normalized);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function startOfCurrentTimer(ticket) {
+      if (!ticket) return null;
+      if (ticket.status === "in_service" && localInServiceStartedAt) return localInServiceStartedAt;
+      if (ticket.status === "in_service" && ticket.assignment_started_at) return parseApiDate(ticket.assignment_started_at);
+      if (ticket.status === "called" && ticket.assignment_created_at) return parseApiDate(ticket.assignment_created_at);
+      if (ticket.created_at) return parseApiDate(ticket.created_at);
+      return null;
+    }
+
+    function renderWaitingTable() {
+      const tbody = document.getElementById("queueBody");
+      tbody.innerHTML = "";
+      const nowMs = Date.now();
+      waitingRowsCache.forEach((item) => {
+        const start = parseApiDate(item.created_at);
+        const seconds = start ? Math.max(0, Math.floor((nowMs - start.getTime()) / 1000)) : 0;
+        const tr = document.createElement("tr");
+        const detail = item.profiled ? profileSummary(item.profile) : "Sin perfilado";
+        tr.innerHTML = `
+          <td>${item.ticket_number}</td>
+          <td>${formatElapsed(seconds)}</td>
+          <td>${detail}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function refreshOnlineExecutives() {
+      const res = await req("/queue/online-executives");
+      onlineExecutives = res.items || [];
+      const select = document.getElementById("transferTo");
+      const currentExecutive = current?.executive_id || getExecutiveId();
+      const before = select.value;
+      const options = onlineExecutives.filter((u) => u.email !== currentExecutive);
+      select.innerHTML = "";
+      if (options.length === 0) {
+        select.innerHTML = '<option value="">Sin ejecutivos conectados</option>';
+        return;
+      }
+      options.forEach((u, idx) => {
+        const option = document.createElement("option");
+        option.value = u.email;
+        const role = u.role ? ` (${u.role})` : "";
+        option.textContent = `${u.name || u.email}${role}`;
+        if (before && before === u.email) option.selected = true;
+        if (!before && idx === 0) option.selected = true;
+        select.appendChild(option);
+      });
     }
 
     async function req(path, options = {}) {
@@ -219,6 +331,10 @@
         document.getElementById("currentRut").textContent = "-";
         document.getElementById("currentProfiled").textContent = "No";
         document.getElementById("currentProfile").innerHTML = "";
+        document.getElementById("currentTimer").textContent = "00:00";
+        document.getElementById("currentInfo").textContent = "";
+        document.getElementById("observationInput").value = "";
+        localInServiceStartedAt = null;
         callBtn.disabled = false;
       } else {
         const isInService = current.status === "in_service";
@@ -227,44 +343,42 @@
         document.getElementById("currentEmpty").style.display = "none";
         document.getElementById("currentPanel").style.display = "block";
         document.getElementById("currentTicket").textContent = current.ticket_number;
-        document.getElementById("currentInfo").textContent = `Sesion: ${current.session_id}`;
+        document.getElementById("currentInfo").textContent = isInService ? "Atención en curso" : "Turno llamado";
         document.getElementById("currentRut").textContent = current.rut || "-";
+        document.getElementById("observationInput").value = current.observation || "";
         document.getElementById("currentProfiled").textContent = current.profiled ? "Si" : "No";
         const profileNode = document.getElementById("currentProfile");
         profileNode.innerHTML = "";
-        const entries = Object.entries(current.profile || {});
+        const entries = orderedProfileEntries(current.profile);
         if (entries.length === 0) {
           profileNode.innerHTML = '<span class="meta">Sin respuestas de perfilado.</span>';
         } else {
           entries.forEach(([k, v]) => {
             const item = document.createElement("span");
             item.className = "pill yes";
-            item.textContent = `${k}: ${String(v)}`;
+            const label = PROFILE_LABELS[k] || k;
+            item.textContent = `${label}: ${String(v)}`;
             profileNode.appendChild(item);
           });
         }
         callBtn.disabled = true;
         startBtn.disabled = isInService;
         finishBtn.disabled = false;
+        if (isInService && current.assignment_started_at) {
+          localInServiceStartedAt = parseApiDate(current.assignment_started_at);
+        }
+        const timerStart = startOfCurrentTimer(current);
+        if (timerStart) {
+          const elapsed = Math.floor((Date.now() - timerStart.getTime()) / 1000);
+          const prefix = isInService ? "Atención " : "Espera ";
+          document.getElementById("currentTimer").textContent = `${prefix}${formatElapsed(elapsed)}`;
+        } else {
+          document.getElementById("currentTimer").textContent = "00:00";
+        }
       }
-
-      const tbody = document.getElementById("queueBody");
-      tbody.innerHTML = "";
-      const now = new Date();
-      waiting.items.forEach((item) => {
-        const created = new Date(item.created_at);
-        const waitMin = Math.max(0, Math.floor((now - created) / 60000));
-        const tr = document.createElement("tr");
-        const pill = item.profiled
-          ? '<span class="pill yes">Si</span>'
-          : '<span class="pill no">No</span>';
-        tr.innerHTML = `
-          <td>${item.ticket_number}</td>
-          <td>${waitMin}</td>
-          <td>${pill}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+      waitingRowsCache = waiting.items || [];
+      renderWaitingTable();
+      await refreshOnlineExecutives();
     }
 
     async function callNext() {
@@ -281,9 +395,20 @@
 
     async function updateCurrent(status) {
       if (!current) return;
+      if (status === "in_service") {
+        document.getElementById("startBtn").disabled = true;
+        document.getElementById("stateText").textContent = "En atencion";
+        document.getElementById("stateText").className = "state in_service";
+        document.getElementById("currentTimer").textContent = "Atención 00:00";
+        localInServiceStartedAt = new Date();
+        await req(`/queue/tickets/${current.id}/start`, { method: "POST" });
+        await refresh();
+        return;
+      }
+      const executiveId = current.executive_id || getExecutiveId();
       await req(`/queue/tickets/${current.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status, executive_id: getExecutiveId() }),
+        body: JSON.stringify({ status, executive_id: executiveId }),
       });
       await refresh();
     }
@@ -300,6 +425,16 @@
           from_executive_id: getExecutiveId(),
           to_executive_id: toExecutive,
         }),
+      });
+      await refresh();
+    }
+
+    async function saveObservation() {
+      if (!current) return;
+      const observation = (document.getElementById("observationInput").value || "").trim();
+      await req(`/queue/tickets/${current.id}/observations`, {
+        method: "POST",
+        body: JSON.stringify({ observation }),
       });
       await refresh();
     }
@@ -349,10 +484,6 @@
         const me = await req("/auth/me");
         authState.user = { id: me.user_id, email: me.email, name: me.name || null, role: me.role };
         saveAuthState(authState);
-        if (me.role === "supervisor" || me.role === "admin") {
-          window.location.href = "/supervisor-dashboard";
-          return;
-        }
         showApp();
         await refresh();
       } catch {
@@ -370,6 +501,7 @@
       if (!value || value === "-") return;
       try { await navigator.clipboard.writeText(value); } catch {}
     };
+    document.getElementById("saveObservationBtn").onclick = () => saveObservation().catch((e) => alert(e.message));
     document.getElementById("loginBtn").onclick = () => login().catch((e) => {
       document.getElementById("loginError").textContent = e.message || "No se pudo ingresar";
     });
@@ -384,6 +516,19 @@
     setInterval(() => {
       if (authState?.access_token) refresh().catch(() => null);
     }, 5000);
+    setInterval(() => {
+      if (!authState?.access_token) return;
+      renderWaitingTable();
+      if (current) {
+        const isInService = current.status === "in_service";
+        const timerStart = startOfCurrentTimer(current);
+        if (timerStart) {
+          const elapsed = Math.floor((Date.now() - timerStart.getTime()) / 1000);
+          const prefix = isInService ? "Atención " : "Espera ";
+          document.getElementById("currentTimer").textContent = `${prefix}${formatElapsed(elapsed)}`;
+        }
+      }
+    }, 1000);
   </script>
 </body>
 </html>
