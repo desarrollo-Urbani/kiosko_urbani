@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     moby_client_id: str = Field(default="", alias="MOBY_CLIENT_ID")
     moby_client_secret: str = Field(default="", alias="MOBY_CLIENT_SECRET")
     executive_allowed_emails: str = Field(default="", alias="EXECUTIVE_ALLOWED_EMAILS")
-    supervisor_emails: str = Field(default="", alias="SUPERVISOR_EMAILS")
+    supervisor_emails: str = Field(default="desarrollo@urbani.cl", alias="SUPERVISOR_EMAILS")
     admin_emails: str = Field(default="", alias="ADMIN_EMAILS")
     auth_session_ttl_minutes: int = Field(default=720, alias="AUTH_SESSION_TTL_MINUTES")
     auth_mysql_enabled: bool = Field(default=False, alias="AUTH_MYSQL_ENABLED")
