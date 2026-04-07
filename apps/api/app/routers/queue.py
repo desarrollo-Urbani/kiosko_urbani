@@ -676,7 +676,7 @@ def prioritize_ticket(
 def reset_queue(
     payload: QueueAdminResetRequest,
     db: Session = Depends(get_db),
-    principal: AuthPrincipal = Depends(require_roles("admin")),
+    principal: AuthPrincipal = Depends(require_roles("supervisor", "admin")),
 ):
     queue_scope = (payload.queue_scope or "").strip()
 
