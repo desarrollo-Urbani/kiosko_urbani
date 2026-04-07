@@ -98,6 +98,12 @@
           <button class="btn" id="transferBtn">Transferir turno</button>
         </div>
         <div style="margin-top:10px;display:grid;gap:8px">
+          <div class="meta">Contacto cliente</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px">
+            <input id="contactEmailInput" type="email" placeholder="cliente@email.com" style="min-height:40px;padding:0 10px;border:1px solid var(--line);border-radius:10px" />
+            <input id="contactPhoneInput" type="text" placeholder="+56 9 1234 5678" style="min-height:40px;padding:0 10px;border:1px solid var(--line);border-radius:10px" />
+            <button class="btn" id="saveContactBtn" style="min-height:40px">Guardar contacto</button>
+          </div>
           <div class="meta">Observaciones</div>
           <textarea id="observationInput" placeholder="Anota observaciones de la atención..." style="min-height:86px;padding:10px;border:1px solid var(--line);border-radius:10px;resize:vertical"></textarea>
           <div>
@@ -339,6 +345,8 @@
         document.getElementById("currentTimer").textContent = "00:00";
         document.getElementById("currentInfo").textContent = "";
         document.getElementById("observationInput").value = "";
+        document.getElementById("contactEmailInput").value = "";
+        document.getElementById("contactPhoneInput").value = "";
         localInServiceStartedAt = null;
         callBtn.disabled = false;
       } else {
@@ -351,6 +359,8 @@
         document.getElementById("currentInfo").textContent = isInService ? "Atención en curso" : "Turno llamado";
         document.getElementById("currentRut").textContent = current.rut || "-";
         document.getElementById("observationInput").value = current.observation || "";
+        document.getElementById("contactEmailInput").value = current.contact_email || "";
+        document.getElementById("contactPhoneInput").value = current.contact_phone || "";
         document.getElementById("currentProfiled").textContent = current.profiled ? "Si" : "No";
         const profileNode = document.getElementById("currentProfile");
         profileNode.innerHTML = "";
@@ -447,6 +457,17 @@
       await refresh();
     }
 
+    async function saveContact() {
+      if (!current) return;
+      const email = (document.getElementById("contactEmailInput").value || "").trim();
+      const phone = (document.getElementById("contactPhoneInput").value || "").trim();
+      await req(`/queue/tickets/${current.id}/contact`, {
+        method: "POST",
+        body: JSON.stringify({ email, phone }),
+      });
+      await refresh();
+    }
+
     async function login() {
       const email = (document.getElementById("loginEmail").value || "").trim().toLowerCase();
       if (!email) {
@@ -510,6 +531,7 @@
       try { await navigator.clipboard.writeText(value); } catch {}
     };
     document.getElementById("saveObservationBtn").onclick = () => saveObservation().catch((e) => alert(e.message));
+    document.getElementById("saveContactBtn").onclick = () => saveContact().catch((e) => alert(e.message));
     document.getElementById("loginBtn").onclick = () => login().catch((e) => {
       document.getElementById("loginError").textContent = e.message || "No se pudo ingresar";
     });

@@ -1,6 +1,10 @@
 import React from 'react';
 import KioskScreen from './KioskScreen';
 
+const KIOSK_LOGIN_EMAIL = 'desarrollo@urbani.cl';
+const KIOSK_LOGIN_PASSWORD = '123';
+const KIOSK_AUTH_KEY = 'urbani_kiosk_auth_ok';
+
 function getApiOrigin(): string {
   const envBase = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/v1';
   try {
@@ -116,7 +120,60 @@ export default function App() {
   const view = search?.get('view');
 
   if (view === 'kiosk') {
-    return <KioskScreen />;
+    return <KioskEntry />;
   }
   return <Portal />;
+}
+
+function KioskEntry() {
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [ok, setOk] = React.useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.sessionStorage.getItem(KIOSK_AUTH_KEY) === '1';
+  });
+
+  const submit = (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const e = email.trim().toLowerCase();
+    if (e === KIOSK_LOGIN_EMAIL && password === KIOSK_LOGIN_PASSWORD) {
+      window.sessionStorage.setItem(KIOSK_AUTH_KEY, '1');
+      setOk(true);
+      setError('');
+      return;
+    }
+    setError('Credenciales invalidas');
+  };
+
+  if (ok) return <KioskScreen />;
+
+  return (
+    <main style={styles.page}>
+      <section style={{ ...styles.headerCard, maxWidth: 560 }}>
+        <h1 style={{ ...styles.h1, fontSize: 32 }}>Ingreso Kiosko</h1>
+        <p style={styles.muted}>Acceso restringido para operacion.</p>
+        <form onSubmit={submit} style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          <input
+            type="email"
+            placeholder="Correo"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{ minHeight: 44, borderRadius: 10, border: '1px solid #263651', padding: '0 12px' }}
+          />
+          <input
+            type="password"
+            placeholder="Clave"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{ minHeight: 44, borderRadius: 10, border: '1px solid #263651', padding: '0 12px' }}
+          />
+          <button type="submit" style={{ ...styles.btn, ...styles.btnPrimary }}>
+            Entrar al kiosko
+          </button>
+          {error ? <div style={{ color: '#ffb3b3', fontWeight: 700 }}>{error}</div> : null}
+        </form>
+      </section>
+    </main>
+  );
 }

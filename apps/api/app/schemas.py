@@ -74,6 +74,11 @@ class QueueTicketObservationRequest(BaseModel):
     observation: str
 
 
+class QueueTicketContactRequest(BaseModel):
+    email: str | None = None
+    phone: str | None = None
+
+
 class RecommendationRunRequest(BaseModel):
     session_id: str
 

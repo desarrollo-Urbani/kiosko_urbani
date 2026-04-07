@@ -12,6 +12,7 @@ from ..models import AppUser, AppUserSession, EventLog, KioskSession, QueueExecu
 from ..schemas import (
     QueueAdminResetRequest,
     QueueCallNextRequest,
+    QueueTicketContactRequest,
     QueuePrioritizeRequest,
     QueueTicketObservationRequest,
     QueueTicketStatusPatchRequest,
@@ -210,13 +211,14 @@ def list_tickets(
         ).all():
             answers_by_session[row.session_id].append(row)
     observation_by_ticket: dict[int, str] = {}
+    contact_by_ticket: dict[int, dict[str, str | None]] = {}
     if session_ids:
         events = db.scalars(
             select(EventLog)
             .where(
                 and_(
                     EventLog.session_id.in_(session_ids),
-                    EventLog.event_type == "queue_ticket_observation_upsert",
+                    EventLog.event_type.in_(["queue_ticket_observation_upsert", "queue_ticket_contact_upsert"]),
                 )
             )
             .order_by(EventLog.created_at.asc(), EventLog.id.asc())
@@ -227,6 +229,13 @@ def list_tickets(
             observation = payload.get("observation")
             if isinstance(ticket_id, int) and isinstance(observation, str):
                 observation_by_ticket[ticket_id] = observation
+            email = payload.get("email")
+            phone = payload.get("phone")
+            if isinstance(ticket_id, int) and ("email" in payload or "phone" in payload):
+                contact_by_ticket[ticket_id] = {
+                    "email": str(email).strip() if isinstance(email, str) else None,
+                    "phone": str(phone).strip() if isinstance(phone, str) else None,
+                }
     return {
         "items": [
             (lambda rut, profile, profiled: {
@@ -239,6 +248,8 @@ def list_tickets(
                 "assignment_started_at": assignment_by_ticket.get(t.id).started_at if assignment_by_ticket.get(t.id) else None,
                 "assignment_ended_at": assignment_by_ticket.get(t.id).ended_at if assignment_by_ticket.get(t.id) else None,
                 "observation": observation_by_ticket.get(t.id),
+                "contact_email": (contact_by_ticket.get(t.id) or {}).get("email"),
+                "contact_phone": (contact_by_ticket.get(t.id) or {}).get("phone"),
                 "rut": rut,
                 "profiled": profiled,
                 "profile": profile,
@@ -387,6 +398,35 @@ def upsert_ticket_observation(
     )
     db.commit()
     return {"ok": True, "ticket_id": ticket.id, "observation": observation}
+
+
+@router.post("/tickets/{ticket_id}/contact")
+def upsert_ticket_contact(
+    ticket_id: int,
+    payload: QueueTicketContactRequest,
+    db: Session = Depends(get_db),
+    principal: AuthPrincipal = Depends(require_roles("executive", "supervisor", "admin")),
+):
+    ticket = db.get(QueueTicket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    email = (payload.email or "").strip() or None
+    phone = (payload.phone or "").strip() or None
+    db.add(
+        EventLog(
+            session_id=ticket.session_id,
+            event_type="queue_ticket_contact_upsert",
+            payload={
+                "ticket_id": ticket.id,
+                "ticket_number": ticket.ticket_number,
+                "email": email,
+                "phone": phone,
+                "author_executive_id": principal.email,
+            },
+        )
+    )
+    db.commit()
+    return {"ok": True, "ticket_id": ticket.id, "email": email, "phone": phone}
 
 
 @router.post("/call-next")
