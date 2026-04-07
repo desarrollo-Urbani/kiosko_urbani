@@ -19,6 +19,7 @@ def _csv_to_set(raw: str) -> set[str]:
 
 
 DEFAULT_SUPERVISOR_EMAILS = {"desarrollo@urbani.cl"}
+DEFAULT_ADMIN_EMAILS = {"desarrollo@urbani.cl"}
 
 DEFAULT_ALLOWED_EMAILS = {
     "notificaciones@mobysuite.com",
@@ -178,7 +179,8 @@ def get_user_name_by_email(email: str) -> str | None:
 
 def _resolve_role(email: str) -> str:
     email_l = email.lower()
-    if email_l in _csv_to_set(settings.admin_emails):
+    admin_set = _csv_to_set(settings.admin_emails) or DEFAULT_ADMIN_EMAILS
+    if email_l in admin_set:
         return "admin"
     supervisor_set = _csv_to_set(settings.supervisor_emails) or DEFAULT_SUPERVISOR_EMAILS
     if email_l in supervisor_set:
