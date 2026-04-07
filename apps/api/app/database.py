@@ -4,14 +4,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import settings
 
 
-# pool_size: conexiones permanentes al pool  (4 workers × 5 = 20 conexiones)
-# max_overflow: conexiones extra en picos    (total máx = 40)
-# pool_timeout: segundos esperando una conexión antes de error
+# Supabase free tier pooler (Session mode) limita a 15 conexiones totales.
+# Con 2 workers gunicorn: pool_size=5 → máx 10 conexiones + 2 overflow = 12 total (seguro bajo el límite).
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
-    pool_size=20,
-    max_overflow=20,
+    pool_size=5,
+    max_overflow=2,
     pool_timeout=30,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
