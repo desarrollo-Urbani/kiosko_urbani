@@ -18,6 +18,9 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://postgres:postgres@localhost:5432/urbani_kiosco",
         alias="DATABASE_URL",
     )
+    db_pool_size: int = Field(default=2, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=0, alias="DB_MAX_OVERFLOW")
+    db_pool_timeout: int = Field(default=30, alias="DB_POOL_TIMEOUT")
     kiosk_token: str = Field(default="dev-kiosk-token", alias="KIOSK_TOKEN")
     average_attention_minutes: int = Field(default=15, alias="AVERAGE_ATTENTION_MINUTES")
     moby_base_url: str = Field(default="https://app-api.mobysuite.com", alias="MOBY_BASE_URL")
